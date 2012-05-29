@@ -278,6 +278,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         death = 0
         b_rez = False
         player_id = None
+        healer_id = None
         pull_start_time = None
         pull_end_time = None
         for row in log_file:
@@ -327,6 +328,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
                     death = 0
                     b_rez = False
                     player_id = None
+                    healer_id = None
                     pull_start_time = None
                     pull_end_time = None
             #except:
