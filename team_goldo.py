@@ -170,12 +170,11 @@ class MainPage(webapp2.RequestHandler):
         """.format(upload))
 
 
-class Upload(blobstore_handlers.BlobstoreUploadHandler):
-
+class Raid:
     raid = []
-    pull_time_list = []
-    pull_end_time_list = []
 
+
+class Upload(blobstore_handlers.BlobstoreUploadHandler):
     def actual_time(self, time, date):
             """Returns the actual time"""
             actual_time = datetime.datetime.strptime(string.join((date,
@@ -197,20 +196,24 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         player_id = row[1][2:]
         pull_start_time = self.actual_time(row[0][1:],
                 current_date)
-        for pull_time in self.pull_time_list:
-            if (abs((pull_start_time - pull_time).total_seconds())
+        for pull in Raid.raid:
+            if (abs((pull_start_time - pull['start']).total_seconds())
                     < 2):
-                pull_start_time = pull_time
+                pull_start_time = pull['start']
                 pull_dict = \
-                    self.raid[self.pull_time_list.index(pull_time)]
+                    Raid.raid[pull]
                 pull_dict['damage_done'][player_id] = 0
                 pull_dict['damage_received'][player_id] = 0
+                logging.info("Entering Previous Combat:{0} - \
+                    {1}".format(row[0][1:],row[2][2:]))
                 return pull_dict, in_combat, new_pull, player_id, \
                     pull_start_time
-        self.pull_time_list.append(pull_start_time)
-        pull_dict = dict([('damage_done', {player_id: 0}),
+        pull_dict = dict([('start', pull_start_time),
+            ('damage_done', {player_id: 0}),
             ('heal', {player_id: 0}),
             ('damage_received', {player_id: 0})])
+        logging.info("Entering New Combat:{0} - \
+            {1}".format(row[0][1:],row[2][2:]))
         new_pull = True
         return pull_dict, in_combat, new_pull, player_id, pull_start_time
 
@@ -227,50 +230,60 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
     def parseHeal(self, row, pull_dict, player_id):
         heal_amount = row[5][1:].split(None, 1)[0][:-1]
         if heal_amount.isdigit():
-            try:
+            if player_id in pull_dict['heal']:
                 pull_dict['heal'][player_id] += \
                     int(heal_amount)
-            except KeyError:
+            else:
                 pull_dict['heal'][player_id] = \
                     int(heal_amount)
         else:
-            try:
+            if player_id in pull_dict['heal']:
                 pull_dict['heal'][player_id] += \
                         int(heal_amount[:-1])
-            except KeyError:
+            else:
                 pull_dict['heal'][player_id] = \
                         int(heal_amount[:-1])
         return pull_dict
 
     def parseDamageReceived(self, row, pull_dict, player_id, healer_id):
         raw_damage = row[5][1:].split(None, 1)[0]
+        if not raw_damage.isdigit():
+            raw_damage = raw_damage[:-1]
         if '{836045448945511}' in row[5]:
+            logging.debug("ABSORB ROW: {}".format(row))
+            logging.debug("ABSORB RAW DAMAGE: {}".format(raw_damage))
             absorbed_damage = \
                 row[5][1:].partition('(')[2].split('{836045448945511}',
-                    1)[0].split(None, 1)[0][:-1]
+                    1)[0].split(None, 1)[0]
+            logging.debug("ABSORBED DAMAGE: {}".format(absorbed_damage))
+            #if absorbed_damage:
             damage_received_amount = int(raw_damage) - int(absorbed_damage)
-            try:
+            if healer_id in pull_dict['heal']:
                 pull_dict['heal'][healer_id] += int(absorbed_damage)
-            except KeyError:
+            else:
                 pull_dict['heal'][healer_id] = int(absorbed_damage)
+            #else:
+            #    damage_received_amount = raw_damage
         else:
             damage_received_amount = raw_damage
             pull_dict['damage_received'][player_id] \
                 += int(damage_received_amount)
         return pull_dict
 
+    #TOFIX: End Combat ?
     def parseExitCombat(self, row, pull_dict, new_pull, current_date,
             pull_start_time, pull_end_time):
         if '{836045448945490}' in row[4]:
+            logging.info("ExitCombatLine:{0} - \
+                {1}".format(row[0][1:],row[2][2:]))
             pull_end_time = self.actual_time(row[0][1:], current_date)
         if new_pull:
-            self.raid.append(pull_dict)
-            self.pull_end_time_list.append(pull_end_time)
-        if not new_pull and pull_end_time > \
-            self.pull_end_time_list[ \
-                self.pull_time_list.index(pull_start_time)]:
-            self.pull_end_time_list[ \
-                self.pull_time_list.index(pull_start_time)] = pull_end_time
+            pull_dict['stop'] = pull_end_time
+            Raid.raid.append(pull_dict)
+            logging.info("Pull Dict: {}".format(pull_dict))
+        if not new_pull and pull_end_time > pull_dict['stop']:
+            pull_dict['stop'] = pull_end_time
+            logging.info("Pull Time Extended: {}").format(pull_end_time)
 
     def parser(self, current_date, log_file):
         new_pull = False
@@ -282,10 +295,12 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         pull_start_time = None
         pull_end_time = None
         for row in log_file:
-            #try:
+            try:
                 row[1] = unicode(row[1], 'iso-8859-1')
                 row[2] = unicode(row[2], 'iso-8859-1')
                 if not in_combat and '{836045448945489}' in row[4]:
+                    logging.info("Entering Combat:{0} - \
+                            {1}".format(row[0][1:],row[2][2:]))
                     pull_dict, in_combat, new_pull, player_id, \
                         pull_start_time = self.parseEnterCombat(row, in_combat,
                         current_date, player_id, new_pull)
@@ -293,6 +308,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
                 elif '{812736661422080}' in row[4] and '@' \
                     in row[2]:
                     healer_id = row[1][2:]
+                    logging.debug("FORCE ARMOUR: {}".format(row))
                     continue
                 elif in_combat and \
                         '{836045448945501}' in row[4] and player_id in row[1]:
@@ -311,16 +327,21 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
                         '{836045448945493}' in row[4]:
                     death += 1
                     pull_end_time = self.actual_time(row[0][1:], current_date)
+                    logging.info("Death:{0} - \
+                            {1}".format(row[0][1:],row[2][2:]))
                     continue
-                elif ('{812826855735296}' in row[4] or '{807217628446720}' \
-                        in row[4]) and player_id in row[2]:
+                elif in_combat and ('{812826855735296}' or '{807217628446720}') \
+                   in row[3] and player_id in row[2] and death:
                     b_rez = True
+                    logging.info("Battle rez:{0} -".format(row))
                     pull_end_time = self.actual_time(row[0][1:], current_date)
                     continue
                 elif in_combat and player_id in row[1] \
                     and ('{973870949466372}' in row[4] or '{836045448945490}' \
                     in row[4] or (death is 2 or (death is 1 and not b_rez) \
                     and '{810619242545152}' in row[3])):
+                    logging.info("ExitCombat: {0} - \
+                            death: {1}, b_rez: {2}".format(row, death, b_rez))
                     self.parseExitCombat(row, pull_dict, new_pull,
                         current_date, pull_start_time, pull_end_time)
                     new_pull = False
@@ -331,8 +352,8 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
                     healer_id = None
                     pull_start_time = None
                     pull_end_time = None
-            #except:
-            #    logging.info('except ROW: {}'.format(row))
+            except:
+                logging.info('except ROW: {}'.format(row))
         self.redirect('/results')
 
 
@@ -353,21 +374,18 @@ class Result(webapp2.RequestHandler):
                        "pull_id": ("number", "Pull Id"),
                        "pull_duration": ("timeofday", "Pull Duration")}
         data = []
-        for pull in Upload.raid:
+        for pull in Raid.raid:
             try:
-                    data.append({"pull_start_time":
-                        Upload.pull_time_list[Upload.raid.index(pull)],
-                        "total_damage":
-                        sum(pull['damage_done'].values()), "players_number":
-                        self.get_players_number(pull),
-                        "pull_id": Upload.raid.index(pull),
+                    data.append({"pull_start_time": pull['start'],
+                        "total_damage": sum(pull['damage_done'].values()),
+                        "players_number": self.get_players_number(pull),
+                        "pull_id": Raid.raid.index(pull),
                         "pull_duration":
-                        (datetime.datetime.min +
-                        (Upload.pull_end_time_list[Upload.raid.index(pull)] -
-                        Upload.pull_time_list[Upload.raid.index(pull)]))})
+                        datetime.datetime.min + (pull['stop'] - pull['start'])
+                        })
             except:
-                    logging.info('EXCEPT PULL:{}'.format(
-                    Upload.pull_time_list[Upload.raid.index(pull)]))
+                    logging.info('EXCEPT PULL:{}'.format(pull))
+
         #Loading it into gviz_api.DataTable
         data_table = gviz_api.DataTable(description)
         data_table.LoadData(data)
@@ -385,9 +403,7 @@ class Result(webapp2.RequestHandler):
 
 class Chart(webapp2.RequestHandler):
     def get(self, chart_id):
-        pull_dict = Upload.raid[int(chart_id)]
-        pull_start_time_list = Upload.pull_time_list
-        pull_end_time_list = Upload.pull_end_time_list
+        pull_dict = Raid.raid[int(chart_id)]
 
         # Creating the data
         chart_dmg_description = {"player": ("string", "Player"),
@@ -410,15 +426,15 @@ class Chart(webapp2.RequestHandler):
             chart_dmg_data.append({"player":
                 player, "damage": damage})
             bar_dmg_data.append({"player": player,
-                "dps": damage / (pull_end_time_list[int(chart_id)] -
-                    pull_start_time_list[int(chart_id)]).total_seconds()})
+                "dps": damage / (pull_dict['stop'] -
+                    pull_dict['start']).total_seconds()})
 
         for player, heal in pull_dict['heal'].iteritems():
             chart_heal_data.append({"player":
                 player, "heal": heal})
             bar_heal_data.append({"player": player,
-                "hps": heal / (pull_end_time_list[int(chart_id)] -
-                    pull_start_time_list[int(chart_id)]).total_seconds()})
+                "hps": heal / (pull_dict['stop'] -
+                    pull_dict['start']).total_seconds()})
 
         for player, damage in pull_dict['damage_received'].iteritems():
             chart_dmg_received_data.append({"player":
@@ -461,7 +477,6 @@ class Chart(webapp2.RequestHandler):
                                  pie_heal=json_pie_heal_chart,
                                  bar_heal=json_bar_heal_chart,
                                  pie_dmg_received=json_pie_dmg_received_chart))
-
 
 app = webapp2.WSGIApplication(
                               [('/', MainPage), ('/upload',
