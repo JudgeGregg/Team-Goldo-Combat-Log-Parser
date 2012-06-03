@@ -207,7 +207,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
             ('damage_done', {self.player_id: 0}),
             ('heal', {self.player_id: 0}),
             ('damage_received', {self.player_id: 0}),
-            ('target', None) 
+            ('target', None)
             ])
         logging.info("Entering New Combat:{0} - \
             {1}".format(row[0][1:], row[2][2:]))
@@ -246,7 +246,6 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
 
     def parseDamageReceived(self, row, pull_dict):
         raw_damage = row[5][1:].split(None, 1)[0]
-        logging.info("raw_damage {}".format(raw_damage))
         if not raw_damage.isdigit():
             raw_damage = raw_damage[:-1]
         if '{836045448945511}' in row[5]:
@@ -273,7 +272,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
             logging.info("Pull Dict: {}".format(pull_dict))
         if not self.new_pull and self.pull_end_time > pull_dict['stop']:
             pull_dict['stop'] = self.pull_end_time
-            logging.info("Pull Time Extended: {}").format(self.pull_end_time)
+            logging.info("Pull Time Extended: {}".format(self.pull_end_time))
 
     def initialize_pull(self):
         self.new_pull = False
@@ -360,7 +359,9 @@ class Result(webapp2.RequestHandler):
                        }
         data = []
         for pull in Raid.raid:
-            #try:
+            if pull['stop'] - pull['start'] < datetime.timedelta(0):
+                pull['stop'] = pull['stop'] + datetime.timedelta(days=1)
+            try:
                     data.append({"pull_start_time": pull['start'],
                         "total_damage": sum(pull['damage_done'].values()),
                         "players_number": self.get_players_number(pull),
@@ -369,8 +370,8 @@ class Result(webapp2.RequestHandler):
                         datetime.datetime.min + (pull['stop'] - pull['start']),
                         "pull_target": pull['target'],
                         })
-            #except:
-            #        logging.info('EXCEPT PULL:{}'.format(pull))
+            except:
+                    logging.info('EXCEPT PULL:{}'.format(pull))
 
         #Loading it into gviz_api.DataTable
         data_table = gviz_api.DataTable(description)
@@ -378,7 +379,7 @@ class Result(webapp2.RequestHandler):
 
         #Creating a JSon string
         json_pull_dict = data_table.ToJSon(columns_order=("pull_id",
-            "pull_start_time","pull_target", "pull_duration", "total_damage",
+            "pull_start_time", "pull_target", "pull_duration", "total_damage",
             "players_number"),
             order_by=("pull_start_time", "asc"))
 
