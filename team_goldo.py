@@ -105,8 +105,6 @@ table_page_template = """
       var json_data = new google.visualization.DataTable
       ({json_pull_dict}, 0.6);
       var json_view = new google.visualization.DataView(json_data);
-      json_view.hideRows(json_view.getFilteredRows([{{column: 2, maxValue:
-      [0,3,0]}}]));
       json_table.draw(json_view,{{ 'showRowNumber': true, 'allowHtml' : true,
       'cssClassNames': cssClassNames }});
 
@@ -185,175 +183,160 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         upload_files = self.get_uploads('file')
         myFile = upload_files[0]
         f = myFile.open()
-        self.current_date = myFile.filename.split('_', 2)[1]
+        current_date = myFile.filename.split('_', 2)[1]
         log_file = csv.reader(f,\
                 delimiter=']', skipinitialspace=True)
-        self.parser(self.current_date, log_file)
+        self.parser(current_date, log_file)
 
-    def parseEnterCombat(self, row, in_combat, current_date, player_id,
-            new_pull):
-        in_combat = True
-        player_id = row[1][2:]
-        pull_start_time = self.actual_time(row[0][1:],
+    def parseEnterCombat(self, row, current_date):
+        self.in_combat = True
+        self.player_id = row[1][2:]
+        self.pull_start_time = self.actual_time(row[0][1:],
                 current_date)
         for pull in Raid.raid:
-            if (abs((pull_start_time - pull['start']).total_seconds())
+            if (abs((self.pull_start_time - pull['start']).total_seconds())
                     < 2):
-                pull_start_time = pull['start']
-                pull_dict = \
-                    Raid.raid[pull]
-                pull_dict['damage_done'][player_id] = 0
-                pull_dict['damage_received'][player_id] = 0
+                self.pull_start_time = pull['start']
+                pull_dict = pull
+                pull_dict['damage_done'][self.player_id] = 0
+                pull_dict['damage_received'][self.player_id] = 0
                 logging.info("Entering Previous Combat:{0} - \
-                    {1}".format(row[0][1:],row[2][2:]))
-                return pull_dict, in_combat, new_pull, player_id, \
-                    pull_start_time
-        pull_dict = dict([('start', pull_start_time),
-            ('damage_done', {player_id: 0}),
-            ('heal', {player_id: 0}),
-            ('damage_received', {player_id: 0})])
+                    {1}".format(row[0][1:], row[2][2:]))
+                return pull_dict
+        pull_dict = dict([('start', self.pull_start_time),
+            ('damage_done', {self.player_id: 0}),
+            ('heal', {self.player_id: 0}),
+            ('damage_received', {self.player_id: 0}),
+            ('target', None) 
+            ])
         logging.info("Entering New Combat:{0} - \
-            {1}".format(row[0][1:],row[2][2:]))
-        new_pull = True
-        return pull_dict, in_combat, new_pull, player_id, pull_start_time
+            {1}".format(row[0][1:], row[2][2:]))
+        self.new_pull = True
+        return pull_dict
 
-    def parseDamageDone(self, row, pull_dict, player_id):
+    def parseDamageDone(self, row, pull_dict):
+        if not pull_dict['target']:
+            pull_dict['target'] = row[2][1:].split('{', 1)[0]
         damage_amount_done = row[5][1:].split(None, 1)[0]
         if damage_amount_done.isdigit():
-            pull_dict['damage_done'][player_id]\
+            pull_dict['damage_done'][self.player_id]\
                 += int(damage_amount_done)
         else:
-            pull_dict['damage_done'][player_id] \
+            pull_dict['damage_done'][self.player_id] \
                 += int(damage_amount_done[:-1])
         return pull_dict
 
-    def parseHeal(self, row, pull_dict, player_id):
+    def parseHeal(self, row, pull_dict):
         heal_amount = row[5][1:].split(None, 1)[0][:-1]
         if heal_amount.isdigit():
-            if player_id in pull_dict['heal']:
-                pull_dict['heal'][player_id] += \
+            if self.player_id in pull_dict['heal']:
+                pull_dict['heal'][self.player_id] += \
                     int(heal_amount)
             else:
-                pull_dict['heal'][player_id] = \
+                pull_dict['heal'][self.player_id] = \
                     int(heal_amount)
         else:
-            if player_id in pull_dict['heal']:
-                pull_dict['heal'][player_id] += \
+            if self.player_id in pull_dict['heal']:
+                pull_dict['heal'][self.player_id] += \
                         int(heal_amount[:-1])
             else:
-                pull_dict['heal'][player_id] = \
+                pull_dict['heal'][self.player_id] = \
                         int(heal_amount[:-1])
         return pull_dict
 
-    def parseDamageReceived(self, row, pull_dict, player_id, healer_id):
+    def parseDamageReceived(self, row, pull_dict):
         raw_damage = row[5][1:].split(None, 1)[0]
+        logging.info("raw_damage {}".format(raw_damage))
         if not raw_damage.isdigit():
             raw_damage = raw_damage[:-1]
         if '{836045448945511}' in row[5]:
-            logging.debug("ABSORB ROW: {}".format(row))
-            logging.debug("ABSORB RAW DAMAGE: {}".format(raw_damage))
             absorbed_damage = \
                 row[5][1:].partition('(')[2].split('{836045448945511}',
                     1)[0].split(None, 1)[0]
-            logging.debug("ABSORBED DAMAGE: {}".format(absorbed_damage))
-            #if absorbed_damage:
-            damage_received_amount = int(raw_damage) - int(absorbed_damage)
-            if healer_id in pull_dict['heal']:
-                pull_dict['heal'][healer_id] += int(absorbed_damage)
+            if self.healer_id in pull_dict['heal']:
+                pull_dict['heal'][self.healer_id] += int(absorbed_damage)
             else:
-                pull_dict['heal'][healer_id] = int(absorbed_damage)
-            #else:
-            #    damage_received_amount = raw_damage
+                pull_dict['heal'][self.healer_id] = int(absorbed_damage)
         else:
-            damage_received_amount = raw_damage
-            pull_dict['damage_received'][player_id] \
-                += int(damage_received_amount)
+            pull_dict['damage_received'][self.player_id] \
+                += int(raw_damage)
         return pull_dict
 
-    #TOFIX: End Combat ?
-    def parseExitCombat(self, row, pull_dict, new_pull, current_date,
-            pull_start_time, pull_end_time):
+    def parseExitCombat(self, row, pull_dict, current_date):
         if '{836045448945490}' in row[4]:
             logging.info("ExitCombatLine:{0} - \
-                {1}".format(row[0][1:],row[2][2:]))
-            pull_end_time = self.actual_time(row[0][1:], current_date)
-        if new_pull:
-            pull_dict['stop'] = pull_end_time
+                {1}".format(row[0][1:], row[2][2:]))
+            self.pull_end_time = self.actual_time(row[0][1:], current_date)
+        if self.new_pull:
+            pull_dict['stop'] = self.pull_end_time
             Raid.raid.append(pull_dict)
             logging.info("Pull Dict: {}".format(pull_dict))
-        if not new_pull and pull_end_time > pull_dict['stop']:
-            pull_dict['stop'] = pull_end_time
-            logging.info("Pull Time Extended: {}").format(pull_end_time)
+        if not self.new_pull and self.pull_end_time > pull_dict['stop']:
+            pull_dict['stop'] = self.pull_end_time
+            logging.info("Pull Time Extended: {}").format(self.pull_end_time)
+
+    def initialize_pull(self):
+        self.new_pull = False
+        self.in_combat = False
+        self.death = False
+        self.b_rez = False
+        self.player_id = None
+        self.healer_id = None
+        self.pull_start_time = None
+        self.pull_end_time = None
 
     def parser(self, current_date, log_file):
-        new_pull = False
-        in_combat = False
-        death = 0
-        b_rez = False
-        player_id = None
-        healer_id = None
-        pull_start_time = None
-        pull_end_time = None
+        self.initialize_pull()
         for row in log_file:
-            try:
                 row[1] = unicode(row[1], 'iso-8859-1')
                 row[2] = unicode(row[2], 'iso-8859-1')
-                if not in_combat and '{836045448945489}' in row[4]:
+                if not self.in_combat and '{836045448945489}' in row[4]:
                     logging.info("Entering Combat:{0} - \
-                            {1}".format(row[0][1:],row[2][2:]))
-                    pull_dict, in_combat, new_pull, player_id, \
-                        pull_start_time = self.parseEnterCombat(row, in_combat,
-                        current_date, player_id, new_pull)
+                            {1}".format(row[0][1:], row[2][2:]))
+                    pull_dict = self.parseEnterCombat(row, current_date)
                     continue
                 elif '{812736661422080}' in row[4] and '@' \
                     in row[2]:
-                    healer_id = row[1][2:]
-                    logging.debug("FORCE ARMOUR: {}".format(row))
+                    self.healer_id = row[1][2:]
                     continue
-                elif in_combat and \
-                        '{836045448945501}' in row[4] and player_id in row[1]:
-                    pull_dict = self.parseDamageDone(row, pull_dict, player_id)
+                elif self.in_combat and '{836045448945501}' \
+                        in row[4] and self.player_id in row[1]:
+                    pull_dict = self.parseDamageDone(row, pull_dict)
                     continue
-                elif in_combat and \
-                    '{836045448945500}' in row[4] and player_id in row[1]:
-                    pull_dict = self.parseHeal(row, pull_dict, player_id)
+                elif self.in_combat and '{836045448945500}'\
+                     in row[4] and self.player_id in row[1] and not \
+                     '{810619242545152}' in row[3]:
+                    pull_dict = self.parseHeal(row, pull_dict)
                     continue
-                elif in_combat and '{836045448945501}' in row[4] and \
-                    player_id in row[2]:
-                    pull_dict = self.parseDamageReceived(row, pull_dict,
-                    player_id, healer_id)
+                elif self.in_combat and '{836045448945501}' in row[4] and \
+                    self.player_id in row[2]:
+                    pull_dict = self.parseDamageReceived(row, pull_dict)
                     continue
-                elif in_combat and player_id in row[2] and \
+                elif self.in_combat and self.player_id in row[2] and \
                         '{836045448945493}' in row[4]:
-                    death += 1
-                    pull_end_time = self.actual_time(row[0][1:], current_date)
+                    self.death = True
+                    self.pull_end_time = self.actual_time(row[0][1:],
+                            current_date)
                     logging.info("Death:{0} - \
-                            {1}".format(row[0][1:],row[2][2:]))
+                            {1}".format(row[0][1:], row[2][2:]))
                     continue
-                elif in_combat and ('{812826855735296}' or '{807217628446720}') \
-                   in row[3] and player_id in row[2] and death:
-                    b_rez = True
+                elif self.in_combat and ('{812826855735296}' or \
+                        '{807217628446720}') in row[3] and self.player_id \
+                        in row[2] and self.death:
+                    self.b_rez = True
                     logging.info("Battle rez:{0} -".format(row))
-                    pull_end_time = self.actual_time(row[0][1:], current_date)
+                    self.pull_end_time = self.actual_time(
+                           row[0][1:], current_date)
                     continue
-                elif in_combat and player_id in row[1] \
-                    and ('{973870949466372}' in row[4] or '{836045448945490}' \
-                    in row[4] or (death is 2 or (death is 1 and not b_rez) \
-                    and '{810619242545152}' in row[3])):
+                elif self.in_combat and self.player_id in row[1] \
+                    and ('{973870949466372}' in row[4] or '{836045448945490}'
+                    in row[4] or (self.death and not self.b_rez and \
+                            '{810619242545152}' in row[3])):
                     logging.info("ExitCombat: {0} - \
-                            death: {1}, b_rez: {2}".format(row, death, b_rez))
-                    self.parseExitCombat(row, pull_dict, new_pull,
-                        current_date, pull_start_time, pull_end_time)
-                    new_pull = False
-                    in_combat = False
-                    death = 0
-                    b_rez = False
-                    player_id = None
-                    healer_id = None
-                    pull_start_time = None
-                    pull_end_time = None
-            except:
-                logging.info('except ROW: {}'.format(row))
+                            death: {1}, b_rez: {2}".format(row, self.death,
+                                self.b_rez))
+                    self.parseExitCombat(row, pull_dict, current_date)
+                    self.initialize_pull()
         self.redirect('/results')
 
 
@@ -372,19 +355,22 @@ class Result(webapp2.RequestHandler):
                        "total_damage": ("number", "Total Damage"),
                        "players_number": ("number", "Number of Player(s)"),
                        "pull_id": ("number", "Pull Id"),
-                       "pull_duration": ("timeofday", "Pull Duration")}
+                       "pull_duration": ("timeofday", "Pull Duration"),
+                       "pull_target": ("string", "Pull Target"),
+                       }
         data = []
         for pull in Raid.raid:
-            try:
+            #try:
                     data.append({"pull_start_time": pull['start'],
                         "total_damage": sum(pull['damage_done'].values()),
                         "players_number": self.get_players_number(pull),
                         "pull_id": Raid.raid.index(pull),
                         "pull_duration":
-                        datetime.datetime.min + (pull['stop'] - pull['start'])
+                        datetime.datetime.min + (pull['stop'] - pull['start']),
+                        "pull_target": pull['target'],
                         })
-            except:
-                    logging.info('EXCEPT PULL:{}'.format(pull))
+            #except:
+            #        logging.info('EXCEPT PULL:{}'.format(pull))
 
         #Loading it into gviz_api.DataTable
         data_table = gviz_api.DataTable(description)
@@ -392,7 +378,7 @@ class Result(webapp2.RequestHandler):
 
         #Creating a JSon string
         json_pull_dict = data_table.ToJSon(columns_order=("pull_id",
-            "pull_start_time", "pull_duration", "total_damage",
+            "pull_start_time","pull_target", "pull_duration", "total_damage",
             "players_number"),
             order_by=("pull_start_time", "asc"))
 
