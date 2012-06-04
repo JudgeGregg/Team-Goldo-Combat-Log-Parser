@@ -193,6 +193,10 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         self.player_id = row[1][2:]
         self.pull_start_time = self.actual_time(row[0][1:],
                 current_date)
+        previous_pull = Raid.raid.pop()
+        if self.pull_start_time - previous_pull['stop'] < \
+        datetime.timedelta(mins=0.5):
+            return previous_pull
         for pull in Raid.raid:
             if (abs((self.pull_start_time - pull['start']).total_seconds())
                     < 2):
