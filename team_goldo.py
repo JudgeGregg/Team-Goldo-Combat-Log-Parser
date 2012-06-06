@@ -194,8 +194,10 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         self.pull_start_time = self.actual_time(row[0][1:],
                 current_date)
         for pull in reversed(Raid.raid):
-            if self.player_id in pull['players'] and 0 < (self.pull_start_time
-                - pull['stop']).total_seconds() < 60:
+            if  0 < (self.pull_start_time
+                    - pull['stop']).total_seconds() < 30:
+                if self.player_id not in pull['players']:
+                    pull['players'].append(self.player_id)
                 logging.debug("Retrieving previous pull: \
                         {0}{1}".format(self.pull_start_time, pull['stop']))
                 return pull
@@ -203,15 +205,14 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
             if (abs((self.pull_start_time - pull['start']).total_seconds())
                     < 2):
                 self.pull_start_time = pull['start']
-                pull_dict = pull
-                pull_dict['damage_done'][self.player_id] = 0
-                pull_dict['damage_received'][self.player_id] = 2
-                if self.player_id not in pull_dict['players']:
-                    pull_dict['players'].append(self.player_id)
+                pull['damage_done'][self.player_id] = 0
+                pull['damage_received'][self.player_id] = 2
+                if self.player_id not in pull['players']:
+                    pull['players'].append(self.player_id)
                 logging.info("Entering Previous Combat:{0} - \
                     {1}".format(row[0][1:], row[2][2:].encode('ascii',
                                 'replace')))
-                return pull_dict
+                return pull
         pull_dict = dict([('start', self.pull_start_time),
             ('damage_done', {self.player_id: 0}),
             ('damage_received', {self.player_id: 0}),
@@ -229,37 +230,21 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         pull_dict['target'] = row[2][1:].split('{', 1)[0]
         damage_amount_done = row[5][1:].split(None, 1)[0]
         if damage_amount_done.isdigit():
-            if self.player_id in pull_dict['damage_done']:
-                pull_dict['damage_done'][self.player_id] \
-                    += int(damage_amount_done)
-            else:
-                pull_dict['damage_done'][self.player_id] \
-                    = int(damage_amount_done)
+            pull_dict['damage_done'][self.player_id] \
+                += int(damage_amount_done)
         else:
-            if self.player_id in pull_dict['damage_done']:
-                pull_dict['damage_done'][self.player_id] \
-                    += int(damage_amount_done[:-1])
-            else:
-                pull_dict['damage_done'][self.player_id] \
-                    = int(damage_amount_done[:-1])
+            pull_dict['damage_done'][self.player_id] \
+                += int(damage_amount_done[:-1])
         return pull_dict
 
     def parseHeal(self, row, pull_dict):
         heal_amount = row[5][1:].split(None, 1)[0][:-1]
         if heal_amount.isdigit():
-            if self.player_id in pull_dict['heal']:
-                pull_dict['heal'][self.player_id] += \
-                    int(heal_amount)
-            else:
-                pull_dict['heal'][self.player_id] = \
-                    int(heal_amount)
+            pull_dict['heal'][self.player_id] \
+                += int(heal_amount)
         else:
-            if self.player_id in pull_dict['heal']:
-                pull_dict['heal'][self.player_id] += \
-                        int(heal_amount[:-1])
-            else:
-                pull_dict['heal'][self.player_id] = \
-                        int(heal_amount[:-1])
+            pull_dict['heal'][self.player_id] \
+                += int(heal_amount[:-1])
         return pull_dict
 
     def parseDamageReceived(self, row, pull_dict):
@@ -270,17 +255,9 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
             absorbed_damage = \
                 row[5][1:].partition('(')[2].split('{836045448945511}',
                     1)[0].split(None, 1)[0]
-            if self.healer_id in pull_dict['heal']:
-                pull_dict['heal'][self.healer_id] += int(absorbed_damage)
-            else:
-                pull_dict['heal'][self.healer_id] = int(absorbed_damage)
-        elif self.player_id in pull_dict['damage_received']:
-            pull_dict['damage_received'][self.player_id] \
+            pull_dict['heal'][self.healer_id] += int(absorbed_damage)
+        pull_dict['damage_received'][self.player_id] \
                 += int(raw_damage)
-        else:
-            pull_dict['damage_received'][self.player_id] \
-                = int(raw_damage)
-
         return pull_dict
 
     def parseExitCombat(self, row, pull_dict, current_date):
@@ -311,8 +288,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         self.player_id = 'None'
         self.initialize_pull()
         for row in log_file:
-                row[1] = unicode(row[1], 'iso-8859-1')
-                row[2] = unicode(row[2], 'iso-8859-1')
+                row[:2] = unicode(row[:2], 'iso-8859-1')
                 if not self.in_combat and '{836045448945489}' in row[4]:
                     logging.info("Entering Combat:{0} - \
                             {1}".format(row[0][1:], row[2][2:].encode('ascii',
@@ -322,6 +298,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
                 elif '{812736661422080}' in row[4] and '@' \
                     in row[2]:
                     self.healer_id = row[1][2:]
+                    pull_dict['heal'][self.healer_id] = 0
                     continue
                 elif self.in_combat and '{836045448945501}' \
                         in row[4] and self.player_id in row[1]:
