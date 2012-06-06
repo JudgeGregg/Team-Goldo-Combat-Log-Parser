@@ -206,7 +206,8 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
                     < 2):
                 self.pull_start_time = pull['start']
                 pull['damage_done'][self.player_id] = 0
-                pull['damage_received'][self.player_id] = 2
+                pull['damage_received'][self.player_id] = 0
+                pull['heal'][self.player_id] = 0
                 if self.player_id not in pull['players']:
                     pull['players'].append(self.player_id)
                 logging.info("Entering Previous Combat:{0} - \
@@ -255,7 +256,10 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
             absorbed_damage = \
                 row[5][1:].partition('(')[2].split('{836045448945511}',
                     1)[0].split(None, 1)[0]
-            pull_dict['heal'][self.healer_id] += int(absorbed_damage)
+            if self.healer_id in pull_dict['heal']:
+                pull_dict['heal'][self.healer_id] += int(absorbed_damage)
+            else:
+                pull_dict['heal'][self.healer_id] = int(absorbed_damage)
         pull_dict['damage_received'][self.player_id] \
                 += int(raw_damage)
         return pull_dict
@@ -298,7 +302,6 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
                 elif '{812736661422080}' in row[4] and '@' \
                     in row[2]:
                     self.healer_id = row[1][2:]
-                    pull_dict['heal'][self.healer_id] = 0
                     continue
                 elif self.in_combat and '{836045448945501}' \
                         in row[4] and self.player_id in row[1]:
