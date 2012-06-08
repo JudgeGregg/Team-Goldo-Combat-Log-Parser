@@ -188,8 +188,42 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
                 delimiter=']', skipinitialspace=True)
         self.parser(current_date, log_file)
 
-#TODO: Create a synchronization function for pulls after parsing
-#FIXME: Cannot retrieve distinct pulls from different players
+    def synchronize_raid(self):
+        for current_pull in Raid.raid:
+            for pull in Raid.raid:
+                if pull['start'] < current_pull['start'] < pull['stop']:
+                    logging.debug("Synchronizing Raid: \
+                            {}".format(Raid.raid))
+                    logging.debug("Synchronizing pulls: \
+                            {}{}".format(current_pull, pull))
+                    for player in current_pull['damage_done']:
+                        if player in pull['damage_done']:
+                            pull['damage_done'][player] += \
+                                current_pull['damage_done'][player]
+                        else:
+                            pull['damage_done'][player] = \
+                                current_pull['damage_done'][player]
+                    for player in current_pull['damage_received']:
+                        if player in pull['damage_received']:
+                            pull['damage_received'][player] += \
+                                current_pull['damage_received'][player]
+                        else:
+                            pull['damage_received'][player] = \
+                                current_pull['damage_received'][player]
+                    for player in current_pull['heal']:
+                        if player in pull['heal']:
+                            pull['heal'][player] += \
+                                current_pull['heal'][player]
+                        else:
+                            pull['heal'][player] = \
+                                current_pull['heal'][player]
+                    pull['players'].update(current_pull['players'])
+                    if current_pull['stop'] > pull['stop']:
+                        pull['stop'] = current_pull['stop']
+                    logging.debug("Synchronized Raid: \
+                            {}".format(Raid.raid))
+                    Raid.raid.remove(current_pull)
+
     def parseEnterCombat(self, row, current_date):
         self.in_combat = True
         self.player_id = row[1][2:]
@@ -198,7 +232,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         for pull in reversed(Raid.raid):
             if (pull['start'] < self.pull_start_time < pull['stop'] or
               0 < (self.pull_start_time - pull['stop']).total_seconds() < 30 or
-              -2 < (self.pull_start_time - pull['start']).total_seconds() < 0):
+              -5 < (self.pull_start_time - pull['start']).total_seconds() < 0):
                 if self.player_id not in pull['players']:
                     pull['players'].add(self.player_id)
                     pull['damage_done'][self.player_id] = 0
@@ -337,6 +371,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
                                 self.b_rez))
                     self.parseExitCombat(row, pull, current_date)
                     self.initialize_pull()
+        self.synchronize_raid()
         self.redirect('/results')
 
 
