@@ -224,7 +224,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
                             {}".format(Raid.raid))
                     Raid.raid.remove(current_pull)
 
-    def parseEnterCombat(self, row, current_date):
+    def parse_enter_combat(self, row, current_date):
         self.in_combat = True
         self.player_id = row[1][2:]
         self.pull_start_time = self.actual_time(row[0][1:],
@@ -255,7 +255,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         self.new_pull = True
         return pull
 
-    def parseDamageDone(self, row, pull):
+    def parse_damage_done(self, row, pull):
         pull['target'] = row[2][1:].split('{', 1)[0]
         damage_amount_done = row[5][1:].split(None, 1)[0]
         if damage_amount_done.isdigit():
@@ -266,7 +266,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
                 += int(damage_amount_done[:-1])
         return pull
 
-    def parseHeal(self, row, pull):
+    def parse_heal(self, row, pull):
         heal_amount = row[5][1:].split(None, 1)[0][:-1]
         if heal_amount.isdigit():
             pull['heal'][self.player_id] \
@@ -276,7 +276,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
                 += int(heal_amount[:-1])
         return pull
 
-    def parseDamageReceived(self, row, pull):
+    def parse_damage_received(self, row, pull):
         raw_damage = row[5][1:].split(None, 1)[0]
         if not raw_damage.isdigit():
             raw_damage = raw_damage[:-1]
@@ -292,7 +292,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
                 += int(raw_damage)
         return pull
 
-    def parseExitCombat(self, row, pull, current_date):
+    def parse_exit_combat(self, row, pull, current_date):
         if '{836045448945490}' in row[4]:
             logging.debug("ExitCombatLine:{0} - \
                 {1}".format(row[0][1:], row[2][2:].encode('ascii',
@@ -326,7 +326,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
                     logging.debug("Entering Combat:{0} - \
                             {1}".format(row[0][1:], row[2][2:].encode('ascii',
                                 'replace')))
-                    pull = self.parseEnterCombat(row, current_date)
+                    pull = self.parse_enter_combat(row, current_date)
                     continue
                 elif '{812736661422080}' in row[4] and '@' \
                     in row[2]:
@@ -334,16 +334,16 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
                     continue
                 elif self.in_combat and '{836045448945501}' \
                         in row[4] and self.player_id in row[1]:
-                    pull = self.parseDamageDone(row, pull)
+                    pull = self.parse_damage_done(row, pull)
                     continue
                 elif self.in_combat and '{836045448945500}'\
                      in row[4] and self.player_id in row[1] and not \
                      '{810619242545152}' in row[3]:
-                    pull = self.parseHeal(row, pull)
+                    pull = self.parse_heal(row, pull)
                     continue
                 elif self.in_combat and '{836045448945501}' in row[4] and \
                     self.player_id in row[2]:
-                    pull = self.parseDamageReceived(row, pull)
+                    pull = self.parse_damage_received(row, pull)
                     continue
                 elif self.in_combat and self.player_id in row[2] and \
                         '{836045448945493}' in row[4]:
@@ -369,7 +369,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
                     logging.debug("ExitCombat: {0} - \
                             death: {1}, b_rez: {2}".format(row, self.death,
                                 self.b_rez))
-                    self.parseExitCombat(row, pull, current_date)
+                    self.parse_exit_combat(row, pull, current_date)
                     self.initialize_pull()
         self.synchronize_raid()
         self.redirect('/results')
@@ -388,7 +388,6 @@ class Result(webapp2.RequestHandler):
                        }
         data = []
         for pull in Raid.raid:
-#            try:
                 if pull['stop'] - pull['start'] < datetime.timedelta(0):
                     pull['stop'] = pull['stop'] + datetime.timedelta(days=1)
                 data.append({"pull_start_time": pull['start'],
@@ -399,9 +398,6 @@ class Result(webapp2.RequestHandler):
                         datetime.datetime.min + (pull['stop'] - pull['start']),
                         "pull_target": pull['target'],
                         })
-#            except:
-#                    logging.debug('EXCEPT PULL:{}'.format(pull))
-#                    logging.debug('RAID :{}'.format(Raid.raid))
 
         #Loading it into gviz_api.DataTable
         data_table = gviz_api.DataTable(description)
