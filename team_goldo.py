@@ -16,16 +16,27 @@ chart_page_template = """
 <html><head>
   <title>Team Goldo Combat Log Parser Results Charts</title>
     <style>
+        div{{ font-family: 'Droid Serif'}}
+        .goldenrod {{color: goldenrod; text-align: center;}}
+        .bold {{font-weight: bold}}
+        .beige-background {{background-color: beige;}}
+        .large-font {{font-family: 'Droid Serif'; font-size: 20px}}
+        .medium-font {{font-family: 'Droid Serif'; font-size: 15px}}
     </style>
   <script src="https://www.google.com/jsapi" type="text/javascript"></script>
   <script>
-    google.load('visualization', '1', {{ packages:['corechart'] }});
-
+        var cssClassNames = {{
+        'headerRow': 'goldenrod bold large-font',
+        'oddTableRow': 'beige-background',
+        'tableCell': 'goldenrod bold medium-font google-greg',
+        'rowNumberCell': 'goldenrod bold'}}
+    google.load('visualization', '1', {{packages:['corechart', 'table']}});
     google.setOnLoadCallback(drawDmgPieChart);
     google.setOnLoadCallback(drawDmgBarChart);
     google.setOnLoadCallback(drawHealPieChart);
     google.setOnLoadCallback(drawHealBarChart);
     google.setOnLoadCallback(drawDmgReceivedPieChart);
+    google.setOnLoadCallback(drawSkillTable);
     function drawDmgPieChart() {{
       var json_pie_dmg_chart = new google.visualization.PieChart
       (document.getElementById('piechart_dmg_div_json'));
@@ -60,7 +71,17 @@ chart_page_template = """
       var json_pie_dmg_received_data = new google.visualization.DataTable
       ({pie_dmg_received}, 0.6);
       json_pie_dmg_received_chart.draw(json_pie_dmg_received_data);
-    }} </script></head>
+    }}
+    function drawSkillTable() {{
+      var json_table = new
+      google.visualization.Table(document.getElementById('skilltable_div_json'));
+      var json_data = new google.visualization.DataTable
+      ({skill_table}, 0.6);
+      var json_view = new google.visualization.DataView(json_data);
+      json_table.draw(json_view,{{'showRowNumber': true, 'allowHtml' : true,
+      'cssClassNames': cssClassNames }});
+    }}
+    </script></head>
   <body>
     <div id = dmg_container>
     <div id = piechart_dmg_div_json></div>
@@ -70,8 +91,10 @@ chart_page_template = """
     <div id = heal_container>
     <div id = piechart_heal_div_json></div>
     <div id = barchart_heal_div_json></div>
+    <div style="clear:both;"></div>
     </div>
     <div id = "piechart_dmg_received_div_json"></div>
+    <div id = "skilltable_div_json"></div>
   </body>
 </html>
 """
@@ -104,9 +127,8 @@ table_page_template = """
       var json_data = new google.visualization.DataTable
       ({json_pull}, 0.6);
       var json_view = new google.visualization.DataView(json_data);
-      json_table.draw(json_view,{{ 'showRowNumber': true, 'allowHtml' : true,
+      json_table.draw(json_view,{{'showRowNumber': true, 'allowHtml' : true,
       'cssClassNames': cssClassNames }});
-
       google.visualization.events.addListener
       (json_table, 'select', function() {{
       var selection = json_table.getSelection();
@@ -249,30 +271,42 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
                     ('heal', {self.player_id: 0}),
                     ('target', None),
                     ('players', set([self.player_id])), ])
-        logging.debug("Entering New Combat:{0} - \
+        logging.debug("Entering New Combat: {0} - \
             {1}".format(row[0][1:], row[2][2:].encode('ascii', 'replace')))
         self.new_pull = True
         return pull
 
     def parse_damage_done(self, row, pull):
+        if '{836045448945506}' in row[5]:
+            return pull
+        player_damage_dict = pull['damage_done'][self.player_id]
         pull['target'] = row[2][1:].split('{', 1)[0]
+        skill = row[3][1:].split('{', 1)[0]
         damage_amount_done = row[5][1:].split(None, 1)[0]
-        if damage_amount_done.isdigit():
-            pull['damage_done'][self.player_id]['amount'] \
-                += int(damage_amount_done)
+        player_damage_dict.setdefault(
+            skill, {'hit': 0, 'dodged': 0, 'missed': 0})
+        if not damage_amount_done.isdigit():
+            damage_amount_done = damage_amount_done[:-1]
+        if int(damage_amount_done) is 0:
+            if '{836045448945505}' in row[5]:
+                player_damage_dict[skill]['dodged'] += 1
+                logging.debug(row)
+                logging.debug(player_damage_dict[skill])
+            else:
+                player_damage_dict[skill]['missed'] += 1
+                logging.debug(row)
+                logging.debug(player_damage_dict[skill])
         else:
-            pull['damage_done'][self.player_id]['amount'] \
-                += int(damage_amount_done[:-1])
+            player_damage_dict['amount'] += int(damage_amount_done)
+            player_damage_dict[skill]['hit'] += 1
         return pull
 
     def parse_heal(self, row, pull):
         heal_amount = row[5][1:].split(None, 1)[0][:-1]
         if heal_amount.isdigit():
-            pull['heal'][self.player_id] \
-                += int(heal_amount)
+            pull['heal'][self.player_id] += int(heal_amount)
         else:
-            pull['heal'][self.player_id] \
-                += int(heal_amount[:-1])
+            pull['heal'][self.player_id] += int(heal_amount[:-1])
         return pull
 
     def parse_damage_received(self, row, pull):
@@ -321,6 +355,8 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         for row in log_file:
                 row[1] = unicode(row[1], 'iso-8859-1')
                 row[2] = unicode(row[2], 'iso-8859-1')
+                row[3] = unicode(row[3], 'iso-8859-1')
+                row[4] = unicode(row[4], 'iso-8859-1')
                 if not self.in_combat and '{836045448945489}' in row[4]:
                     logging.debug("Entering Combat:{0} - \
                         {1}".format(row[0][1:], row[2][2:].encode(
@@ -421,22 +457,46 @@ class Chart(webapp2.RequestHandler):
         pull = Raid.raid[int(chart_id)]
 
         # Creating the data
+        skill_table_description = {"player": ("string", "Player"),
+                                   "skill": ("string", "Skill"),
+                                   "hit": ("number", "Hits"),
+                                   "missed": ("number", "Missed"),
+                                   "dodged": ("number", "Dodged")}
+        data = list()
+        for player, skill_dict in pull['damage_done'].items():
+            for skill, result in skill_dict.items():
+                if skill is not 'amount':
+                    logging.debug(skill)
+                    logging.debug(result)
+                    data.append(
+                        {"player": player,
+                         "skill": skill,
+                         "hit": result.get('hit'),
+                         "dodged": result.get('dodged'),
+                         "missed": result.get('missed'), }
+                    )
+
+        #Loading it into gviz_api.DataTable
+        skill_data_table = gviz_api.DataTable(skill_table_description)
+        skill_data_table.LoadData(data)
+
+        # Creating the data
         chart_dmg_description = {"player": ("string", "Player"),
                                  "damage": ("number", "Damage")}
-        chart_dmg_data = []
+        chart_dmg_data = list()
         bar_dmg_description = {"player": ("string", "Player"),
                                "dps": ("number", "DPS")}
-        bar_dmg_data = []
+        bar_dmg_data = list()
         chart_heal_description = {"player": ("string", "Player"),
                                   "heal": ("number", "heal")}
-        chart_heal_data = []
+        chart_heal_data = list()
         bar_heal_description = {"player": ("string", "Player"),
                                 "hps": ("number", "HPS")}
-        bar_heal_data = []
+        bar_heal_data = list()
         chart_dmg_received_description = {"player": ("string", "Player"),
                                           "damage_received":
                                           ("number", "Damage Received")}
-        chart_dmg_received_data = []
+        chart_dmg_received_data = list()
 
         for player, damage_dict in pull['damage_done'].iteritems():
             chart_dmg_data.append(
@@ -485,6 +545,11 @@ class Chart(webapp2.RequestHandler):
         json_pie_dmg_received_chart = \
             pie_dmg_received_data_table.ToJSon(columns_order=(
                 "player", "damage_received"))
+        json_skill_data_table = \
+            skill_data_table.ToJSon(columns_order=(
+                "player", "skill", "hit", "dodged", "missed"),
+                order_by=("player", "skill"))
+        logging.debug(json_skill_data_table)
 
         # Putting the JSon string into the template
         self.response.out.write(chart_page_template.format
@@ -492,7 +557,8 @@ class Chart(webapp2.RequestHandler):
                                  bar_dmg=json_bar_dmg_chart,
                                  pie_heal=json_pie_heal_chart,
                                  bar_heal=json_bar_heal_chart,
-                                 pie_dmg_received=json_pie_dmg_received_chart))
+                                 pie_dmg_received=json_pie_dmg_received_chart,
+                                 skill_table=json_skill_data_table))
 
 app = webapp2.WSGIApplication([('/', MainPage), ('/upload',
                               Upload), ('/chart/(\d+)', Chart), ('/results',
