@@ -1,4 +1,3 @@
-#!/usr/bin/python
 # -*- coding: utf8 -*-
 
 import csv
@@ -37,6 +36,7 @@ chart_page_template = """
     google.setOnLoadCallback(drawHealBarChart);
     google.setOnLoadCallback(drawDmgReceivedPieChart);
     google.setOnLoadCallback(drawSkillTable);
+    google.setOnLoadCallback(drawDmgTable);
     function drawDmgPieChart() {{
       var json_pie_dmg_chart = new google.visualization.PieChart
       (document.getElementById('piechart_dmg_div_json'));
@@ -73,10 +73,31 @@ chart_page_template = """
       json_pie_dmg_received_chart.draw(json_pie_dmg_received_data);
     }}
     function drawSkillTable() {{
-      var json_table = new
-      google.visualization.Table(document.getElementById('skilltable_div_json'));
+      var json_table = new google.visualization.Table
+      (document.getElementById('skilltable_div_json'));
       var json_data = new google.visualization.DataTable
       ({skill_table}, 0.6);
+      var json_view = new google.visualization.DataView(json_data);
+      json_table.draw(json_view,{{'showRowNumber': true, 'allowHtml' : true,
+      'cssClassNames': cssClassNames }});
+    }}
+    function drawDmgTable() {{
+      var json_table = new
+      google.visualization.Table(document.getElementById(
+      'dmgtable_div_json'));
+      var json_data = new google.visualization.DataTable
+      ({dmg_table}, 0.6);
+    }}
+    function drawDmgTable() {{
+      var json_table = new
+      google.visualization.Table(document.getElementById(
+      'dmgtable_div_json'));
+      var json_data = new google.visualization.DataTable
+      ({dmg_table}, 0.6);
+      google.visualization.Table(document.getElementById(
+      'dmgtable_div_json'));
+      var json_data = new google.visualization.DataTable
+      ({dmg_table}, 0.6);
       var json_view = new google.visualization.DataView(json_data);
       json_table.draw(json_view,{{'showRowNumber': true, 'allowHtml' : true,
       'cssClassNames': cssClassNames }});
@@ -95,6 +116,7 @@ chart_page_template = """
     </div>
     <div id = "piechart_dmg_received_div_json"></div>
     <div id = "skilltable_div_json"></div>
+    <div id = "dmgtable_div_json"></div>
   </body>
 </html>
 """
@@ -119,7 +141,7 @@ table_page_template = """
     var cssClassNames = {{
     'headerRow': 'goldenrod bold large-font',
     'oddTableRow': 'beige-background',
-    'tableCell': 'goldenrod bold medium-font google-greg',
+    'tableCell': 'goldenrod bold medium-font',
     'rowNumberCell': 'goldenrod bold'}}
     function drawTable() {{
       var json_table = new
@@ -203,11 +225,13 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
     def post(self):
         upload_files = self.get_uploads('file')
         myFile = upload_files[0]
-        f = myFile.open()
+        uploaded_file = myFile.open()
         current_date = myFile.filename.split('_', 2)[1]
         log_file = csv.reader(
-            f, delimiter=']', skipinitialspace=True)
+            uploaded_file, delimiter=']', skipinitialspace=True)
         self.parser(current_date, log_file)
+        uploaded_file.close()
+        self.redirect('/results')
 
     def synchronize_raid(self):
         for current_pull in Raid.raid:
@@ -252,14 +276,16 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
             row[0][1:], current_date)
         for pull in reversed(Raid.raid):
             if (pull['start'] < self.pull_start_time < pull['stop'] or
-                0 < (self.pull_start_time - pull['stop']).total_seconds() < 30
+                0 < (self.pull_start_time - pull['stop']).total_seconds() < 5
                 or -5 <
                 (self.pull_start_time - pull['start']).total_seconds()
                     < 0):
                 if self.player_id not in pull['players']:
                     pull['players'].add(self.player_id)
                     pull['damage_done'][self.player_id] = {'amount': 0}
-                    pull['damage_received'][self.player_id] = 0
+                    pull['damage_received'][self.player_id] = {
+                        'attackers': dict(),
+                        'amount': 0}
                     if self.player_id not in pull['heal']:
                         pull['heal'][self.player_id] = 0
                 logging.debug("Retrieving previous pull: \
@@ -267,7 +293,9 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
                 return pull
         pull = dict([('start', self.pull_start_time),
                     ('damage_done', {self.player_id: {'amount': 0}}),
-                    ('damage_received', {self.player_id: 0}),
+                    ('damage_received', {self.player_id: {
+                        'attackers': dict(),
+                        'amount': 0}, }),
                     ('heal', {self.player_id: 0}),
                     ('target', None),
                     ('players', set([self.player_id])), ])
@@ -284,21 +312,19 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         skill = row[3][1:].split('{', 1)[0]
         damage_amount_done = row[5][1:].split(None, 1)[0]
         player_damage_dict.setdefault(
-            skill, {'hit': 0, 'dodged': 0, 'missed': 0})
+            skill, {'hit': 0, 'dodged': 0, 'missed': 0, 'total_damage': 0})
         if not damage_amount_done.isdigit():
             damage_amount_done = damage_amount_done[:-1]
         if int(damage_amount_done) is 0:
             if '{836045448945505}' in row[5]:
                 player_damage_dict[skill]['dodged'] += 1
-                logging.debug(row)
-                logging.debug(player_damage_dict[skill])
             else:
                 player_damage_dict[skill]['missed'] += 1
-                logging.debug(row)
-                logging.debug(player_damage_dict[skill])
         else:
             player_damage_dict['amount'] += int(damage_amount_done)
             player_damage_dict[skill]['hit'] += 1
+            player_damage_dict[skill]['total_damage'] \
+                += int(damage_amount_done)
         return pull
 
     def parse_heal(self, row, pull):
@@ -310,7 +336,17 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         return pull
 
     def parse_damage_received(self, row, pull):
-        raw_damage = row[5][1:].split(None, 1)[0]
+        player_damage_dict = \
+            pull['damage_received'][self.player_id]['attackers']
+        attacker = row[1][1:].split('{', 1)[0]
+        skill = row[3][1:].split('{', 1)[0]
+        raw_damage, dmg_type = row[5][1:].split(None, 2)[:2]
+        player_damage_dict.setdefault(attacker, dict())
+        player_damage_dict[attacker].setdefault(
+            skill, {'hit': 0, 'dodged': 0, 'shielded': 0, 'total_damage': 0})
+        if raw_damage != '0':
+            player_damage_dict[attacker][skill].setdefault(
+                'dmg_type', dmg_type)
         if not raw_damage.isdigit():
             raw_damage = raw_damage[:-1]
         if '{836045448945511}' in row[5]:
@@ -321,16 +357,29 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
                 pull['heal'][self.healer_id] += int(absorbed_damage)
             else:
                 pull['heal'][self.healer_id] = int(absorbed_damage)
-        pull['damage_received'][self.player_id] \
+                row[5][1:].partition('(')[2].split(
+                    '{836045448945511}', 1)[0].split(None, 1)[0]
+            if self.healer_id in pull['heal']:
+                pull['heal'][self.healer_id] += int(absorbed_damage)
+            else:
+                pull['heal'][self.healer_id] = int(absorbed_damage)
+            if self.healer_id in pull['heal']:
+                pull['heal'][self.healer_id] += int(absorbed_damage)
+            else:
+                pull['heal'][self.healer_id] = int(absorbed_damage)
+        if ('{836045448945505}' or '{836045448945508}') in row[5]:
+            player_damage_dict[attacker][skill]['dodged'] += 1
+        elif '{836045448945509}' in row[5]:
+            player_damage_dict[attacker][skill]['shielded'] += 1
+        else:
+            player_damage_dict[attacker][skill]['hit'] += 1
+        player_damage_dict[attacker][skill]['total_damage'] \
+            += int(raw_damage)
+        pull['damage_received'][self.player_id]['amount'] \
             += int(raw_damage)
         return pull
 
     def parse_exit_combat(self, row, pull, current_date):
-        if '{836045448945490}' in row[4]:
-            logging.debug("ExitCombatLine:{0} - \
-                {1}".format(row[0][1:], row[2][2:].encode(
-                'ascii', 'replace')))
-            self.pull_end_time = self.actual_time(row[0][1:], current_date)
         if self.new_pull:
             pull['stop'] = self.pull_end_time
             Raid.raid.append(pull)
@@ -342,8 +391,6 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
     def initialize_pull(self):
         self.new_pull = False
         self.in_combat = False
-        self.death = False
-        self.b_rez = False
         self.player_id = None
         self.healer_id = None
         self.pull_start_time = None
@@ -353,62 +400,42 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         self.player_id = 'None'
         self.initialize_pull()
         for row in log_file:
-                row[1] = unicode(row[1], 'iso-8859-1')
-                row[2] = unicode(row[2], 'iso-8859-1')
-                row[3] = unicode(row[3], 'iso-8859-1')
-                row[4] = unicode(row[4], 'iso-8859-1')
-                if not self.in_combat and '{836045448945489}' in row[4]:
-                    logging.debug("Entering Combat:{0} - \
-                        {1}".format(row[0][1:], row[2][2:].encode(
-                        'ascii', 'replace')))
-                    pull = self.parse_enter_combat(row, current_date)
-                    continue
-                elif '{812736661422080}' in row[4] and '@' in row[2]:
-                    self.healer_id = row[1][2:]
-                    continue
-                elif self.in_combat and '{836045448945501}' \
-                        in row[4] and self.player_id in row[1]:
-                    pull = self.parse_damage_done(row, pull)
-                    continue
-                elif self.in_combat and '{836045448945500}' \
-                    in row[4] and self.player_id in row[1] and not \
-                        '{810619242545152}' in row[3]:
-                    pull = self.parse_heal(row, pull)
-                    continue
-                elif self.in_combat and '{836045448945501}' in row[4] and \
-                        self.player_id in row[2]:
-                    pull = self.parse_damage_received(row, pull)
-                    continue
-                elif self.in_combat and self.player_id in row[2] and \
-                        '{836045448945493}' in row[4]:
-                    self.death = True
-                    self.pull_end_time = self.actual_time(
-                        row[0][1:], current_date)
-                    logging.debug("Death:{0} - \
-                        {1}".format(row[0][1:], row[2][2:].encode(
-                        'ascii', 'replace')))
-                    continue
-                elif self.in_combat and (
-                    '{812826855735296}' or '{807217628446720}') in row[3] \
-                        and self.player_id in row[2] and self.death:
-                    self.b_rez = True
-                    logging.debug("Battle rez:{0} -".format(row))
-                    self.pull_end_time = self.actual_time(
-                        row[0][1:], current_date)
-                    continue
-                elif self.in_combat and self.player_id in row[1] \
-                    and (
-                        '{973870949466372}' in row[4] or '{836045448945490}'
-                        in row[4] or (
-                            self.death and not self.b_rez and
-                            '{810619242545152}' in row[3])):
-                    logging.debug("ExitCombat: {0} - \
-                        death: {1}, b_rez: {2}".format(
-                        row, self.death, self.b_rez))
-                    self.parse_exit_combat(row, pull, current_date)
-                    self.initialize_pull()
+            row = [unicode(row_field, 'iso-8859-1') for row_field in row]
+            if not self.in_combat and '{836045448945489}' in row[4]:
+                logging.debug("Entering Combat:{0} - \
+                    {1}".format(row[0][1:], row[2][2:].encode(
+                    'ascii', 'replace')))
+                pull = self.parse_enter_combat(row, current_date)
+                continue
+            elif '{812736661422080}' in row[4] and '@' in row[2]:
+                self.healer_id = row[1][2:]
+                continue
+            elif self.in_combat and '{836045448945501}' \
+                    in row[4] and self.player_id in row[1]:
+                pull = self.parse_damage_done(row, pull)
+                continue
+            elif self.in_combat and '{836045448945500}' \
+                in row[4] and self.player_id in row[1] and not \
+                    '{810619242545152}' in row[3]:
+                pull = self.parse_heal(row, pull)
+                continue
+            elif self.in_combat and '{836045448945501}' in row[4] and \
+                    self.player_id in row[2]:
+                pull = self.parse_damage_received(row, pull)
+                continue
+            elif self.in_combat and self.player_id in row[2] and \
+                    '{836045448945493}' in row[4] or '{836045448945490}' \
+                        in row[4]:
+                self.pull_end_time = self.actual_time(
+                    row[0][1:], current_date)
+                logging.debug("Death:{0} - \
+                    {1}".format(row[0][1:], row[2][2:].encode(
+                    'ascii', 'replace')))
+                self.parse_exit_combat(row, pull, current_date)
+                self.initialize_pull()
+                continue
         self.synchronize_raid()
-        self.redirect('/results')
+        return True
 
 
 class Result(webapp2.RequestHandler):
@@ -461,25 +488,54 @@ class Chart(webapp2.RequestHandler):
                                    "skill": ("string", "Skill"),
                                    "hit": ("number", "Hits"),
                                    "missed": ("number", "Missed"),
-                                   "dodged": ("number", "Dodged")}
-        data = list()
+                                   "dodged": ("number", "Dodged"),
+                                   "total_damage": (
+                                       "number", "Total Damage")}
+        skill_data = list()
         for player, skill_dict in pull['damage_done'].items():
             for skill, result in skill_dict.items():
                 if skill is not 'amount':
-                    logging.debug(skill)
-                    logging.debug(result)
-                    data.append(
+                    skill_data.append(
                         {"player": player,
                          "skill": skill,
                          "hit": result.get('hit'),
                          "dodged": result.get('dodged'),
-                         "missed": result.get('missed'), }
+                         "missed": result.get('missed'),
+                         "total_damage": result.get('total_damage')}
                     )
 
         #Loading it into gviz_api.DataTable
         skill_data_table = gviz_api.DataTable(skill_table_description)
-        skill_data_table.LoadData(data)
+        skill_data_table.LoadData(skill_data)
 
+        # Creating the data
+        dmg_table_description = {"player": ("string", "Player"),
+                                 "attacker": ("string", "Attacker"),
+                                 "skill": ("string", "Skill"),
+                                 "hit": ("number", "Hits"),
+                                 "shielded": ("number", "Shielded"),
+                                 "dodged": ("number", "Dodged"),
+                                 "total_damage": ("number", "Total Damage"),
+                                 "dmg_type": ("string", "Damage Type")}
+        dmg_data = list()
+        for player, attacker_dict in pull['damage_received'].items():
+            for attacker, skill_dict in attacker_dict['attackers'].items():
+                if attacker is not 'amount':
+                    for skill, result in skill_dict.items():
+                        dmg_data.append(
+                            {"player": player,
+                             "attacker": attacker,
+                             "skill": skill,
+                             "hit": result.get('hit'),
+                             "dodged": result.get('dodged'),
+                             "shielded": result.get('shielded'),
+                             "total_damage": result.get('total_damage'),
+                             "dmg_type": result.get('dmg_type')}
+                        )
+
+        #Loading it into gviz_api.DataTable
+        dmg_data_table = gviz_api.DataTable(dmg_table_description)
+        dmg_data_table.LoadData(dmg_data)
         # Creating the data
         chart_dmg_description = {"player": ("string", "Player"),
                                  "damage": ("number", "Damage")}
@@ -514,7 +570,7 @@ class Chart(webapp2.RequestHandler):
 
         for player, damage in pull['damage_received'].iteritems():
             chart_dmg_received_data.append(
-                {"player": player, "damage_received": damage})
+                {"player": player, "damage_received": damage['amount']})
 
         # Loading it into gviz_api.DataTable
         pie_dmg_data_table = gviz_api.DataTable(chart_dmg_description)
@@ -547,19 +603,23 @@ class Chart(webapp2.RequestHandler):
                 "player", "damage_received"))
         json_skill_data_table = \
             skill_data_table.ToJSon(columns_order=(
-                "player", "skill", "hit", "dodged", "missed"),
+                "player", "skill", "hit", "dodged", "missed", "total_damage"),
                 order_by=("player", "skill"))
-        logging.debug(json_skill_data_table)
+        json_dmg_data_table = \
+            dmg_data_table.ToJSon(columns_order=(
+                "player", "attacker", "skill", "hit",
+                "dodged", "shielded", 'total_damage', 'dmg_type'),
+                order_by=("player", "attacker", "skill"))
 
         # Putting the JSon string into the template
-        self.response.out.write(chart_page_template.format
-                                (pie_dmg=json_pie_dmg_chart,
+        response = chart_page_template.format(pie_dmg=json_pie_dmg_chart,
                                  bar_dmg=json_bar_dmg_chart,
                                  pie_heal=json_pie_heal_chart,
                                  bar_heal=json_bar_heal_chart,
                                  pie_dmg_received=json_pie_dmg_received_chart,
-                                 skill_table=json_skill_data_table))
-
+                                 skill_table=json_skill_data_table,
+                                 dmg_table=json_dmg_data_table)
+        self.response.out.write(response)
 app = webapp2.WSGIApplication([('/', MainPage), ('/upload',
                               Upload), ('/chart/(\d+)', Chart), ('/results',
                               Result)],
