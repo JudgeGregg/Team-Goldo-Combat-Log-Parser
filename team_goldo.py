@@ -49,9 +49,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         try:
             uploaded_file = myFile.open()
             current_date = myFile.filename.split('_', 2)[1]
-        except IndexError:
-            self.redirect('/')
-        except IOError:
+        except (IndexError, IOError):
             self.redirect('/')
         else:
             log_file = csv.DictReader(
@@ -102,9 +100,9 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
 
     def parse_heal(self, row, pull):
         heal_amount = row['amount'][1:].split(None, 1)[0][:-1]
-        if heal_amount.isdigit():
+        try:
             pull['heal'][self.player_id] += int(heal_amount)
-        else:
+        except ValueError:
             pull['heal'][self.player_id] += int(heal_amount[:-1])
         return pull
 
