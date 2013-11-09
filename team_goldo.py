@@ -75,20 +75,20 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
             myFile = upload_files[0]
         except IndexError:
             self.redirect('/')
-            return False
         #TODO: add file validation
-        try:
-            uploaded_file = myFile.open()
-            self.current_date = myFile.filename.split('_', 2)[1]
-        except (IndexError, IOError):
-            self.redirect('/')
         else:
-            log_file = csv.DictReader(
-                uploaded_file, fieldnames=CSV_HEADER, delimiter=']',
-                skipinitialspace=True)
-            self.parse(log_file)
-            uploaded_file.close()
-            self.redirect('/results')
+            try:
+                uploaded_file = myFile.open()
+                self.current_date = myFile.filename.split('_', 2)[1]
+            except (IndexError, IOError):
+                self.redirect('/')
+            else:
+                log_file = csv.DictReader(
+                    uploaded_file, fieldnames=CSV_HEADER, delimiter=']',
+                    skipinitialspace=True)
+                self.parse(log_file)
+                uploaded_file.close()
+                self.redirect('/results')
 
     def parse_enter_combat(self, row):
         """Parse enter combat."""
