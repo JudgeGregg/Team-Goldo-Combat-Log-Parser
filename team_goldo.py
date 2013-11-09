@@ -19,7 +19,7 @@ from google.appengine.ext.webapp import blobstore_handlers
 
 CSV_HEADER = ['time', 'from', 'to', 'skill', 'effect', 'amount']
 
-DISPATCH_DICT = {
+ROW_DISPATCH_DICT = {
     (('in_combat', False), ('effect', ENTER_COMBAT)):
     'parse_enter_combat',
     (('in_combat', True), ('effect', DAMAGE_DONE), ('from', 'player_id')):
@@ -34,6 +34,13 @@ DISPATCH_DICT = {
     'parse_exit_combat',
     (('in_combat', True), ('effect', LEAVE_COMBAT), ('to', 'player_id')):
     'parse_exit_combat',
+}
+
+DMG_RCVD_DISPATCH_DICT = {
+    ABSORB: 'absorb',
+    DODGE: 'dodge_or_parry',
+    PARRY: 'dodge_or_parry',
+    SHIELD: 'shield',
 }
 
 
@@ -127,46 +134,64 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         return True
 
     def parse_damage_received(self, row):
-        player_damage_dict = \
-            self.pull['damage_received'][self.player_id]['attackers']
+        damage_dict = self.pull['damage_received']
+        player_damage_dict = damage_dict[self.player_id]['attackers']
         attacker = row['from'][1:].split('{', 1)[0]
         skill = row['skill'][1:].split('{', 1)[0]
         raw_damage, dmg_type = row['amount'][1:].split(None, 2)[:2]
         player_damage_dict.setdefault(attacker, dict())
         player_damage_dict[attacker].setdefault(
             skill, {'hit': 0, 'dodged': 0, 'shielded': 0, 'total_damage': 0})
-        if raw_damage != '0':
+        skill_dict = player_damage_dict[attacker][skill]
+        try:
+            raw_damage = int(raw_damage)
+        except ValueError:
+            raw_damage = int(raw_damage[:-1])
+        if raw_damage != 0:
             player_damage_dict[attacker][skill].setdefault(
                 'dmg_type', dmg_type)
-        if not raw_damage.isdigit():
-            raw_damage = raw_damage[:-1]
-        if ABSORB in row['amount']:
-            absorbed_damage = row['amount'][1:].partition('(')[2].split(
-                ABSORB, 1)[0].split(None, 1)[0]
-            if self.healer_id in self.pull['heal']:
-                self.pull['heal'][self.healer_id] += int(absorbed_damage)
-            else:
-                self.pull['heal'][self.healer_id] = int(absorbed_damage)
-                row['amount'][1:].partition('(')[2].split(
-                    ABSORB, 1)[0].split(None, 1)[0]
-            if self.healer_id in self.pull['heal']:
-                self.pull['heal'][self.healer_id] += int(absorbed_damage)
-            else:
-                self.pull['heal'][self.healer_id] = int(absorbed_damage)
-            if self.healer_id in self.pull['heal']:
-                self.pull['heal'][self.healer_id] += int(absorbed_damage)
-            else:
-                self.pull['heal'][self.healer_id] = int(absorbed_damage)
-        if (DODGE or PARRY) in row['amount']:
-            player_damage_dict[attacker][skill]['dodged'] += 1
-        elif SHIELD in row['amount']:
-            player_damage_dict[attacker][skill]['shielded'] += 1
-        else:
-            player_damage_dict[attacker][skill]['hit'] += 1
-        player_damage_dict[attacker][skill]['total_damage'] += int(
-            raw_damage)
-        self.pull['damage_received'][self.player_id]['amount'] += int(
-            raw_damage)
+        for effect, handler in DMG_RCVD_DISPATCH_DICT.items():
+            if effect in row['amount']:
+                getattr(self, handler)(row, skill_dict)
+                return True
+        skill_dict['hit'] += 1
+        skill_dict['total_damage'] += raw_damage
+        self.pull['damage_received'][self.player_id]['amount'] += raw_damage
+        return True
+
+    def absorb(self, row, skill_dict):
+        """@todo: Docstring for absorb
+
+        :row: @todo
+        :returns: @todo
+
+        """
+        absorbed_damage = int(row['amount'][1:].partition('(')[2].split(
+            ABSORB, 1)[0].split(None, 1)[0])
+        try:
+            self.pull['heal'][self.healer_id] += int(absorbed_damage)
+        except KeyError:
+            self.pull['heal'][self.healer_id] = int(absorbed_damage)
+        return True
+
+    def dodge_or_parry(self, row, skill_dict):
+        """@todo: Docstring for absorb
+
+        :row: @todo
+        :returns: @todo
+
+        """
+        skill_dict['dodged'] += 1
+        return True
+
+    def shield(self, row, skill_dict):
+        """@todo: Docstring for absorb
+
+        :row: @todo
+        :returns: @todo
+
+        """
+        skill_dict['shielded'] += 1
         return True
 
     def parse_affect_healer(self, row):
@@ -202,7 +227,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         :returns: @todo
 
         """
-        for conditions, handler in DISPATCH_DICT.items():
+        for conditions, handler in ROW_DISPATCH_DICT.items():
             for condition, value in conditions:
                 if condition == 'in_combat':
                     if not value == self.in_combat:
@@ -216,17 +241,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
                 elif not value in row[condition]:
                     break
             else:
-                try:
-                    getattr(self, handler)(row)
-                except Exception as e:
-                    logging.error('CONDITIONS: %s', conditions)
-                    logging.error('ROW: %s', row)
-                    logging.error('HANDLER: %s', handler)
-                    logging.error('COMBAT: %s', self.in_combat)
-                    logging.error('PLAYER: %s', self.player_id)
-                    logging.error('PULL START: %s', self.pull_start_time)
-                    logging.error('PULL STOP: %s', self.pull_end_time)
-                    raise e
+                getattr(self, handler)(row)
 
 
 class Result(webapp2.RequestHandler):
