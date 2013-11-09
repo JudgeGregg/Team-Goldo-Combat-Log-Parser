@@ -177,7 +177,7 @@ main_page_template = """
         </div>
         <div id='upload'>
         <p><img src='/img/swtor_logo.png' alt='SWTOR Logo' /></p>
-        <h1>Upload your combat log</h1>
+        <h1>Upload Combat Log</h1>
         <form name="upload" action="{}" method="post"
             enctype="multipart/form-data">
         <input type="file" name="file" /><br /><br />
