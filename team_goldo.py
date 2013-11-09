@@ -103,18 +103,19 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         damage_amount_done = row['amount'][1:].split(None, 1)[0]
         player_damage_dict.setdefault(
             skill, {'hit': 0, 'dodged': 0, 'missed': 0, 'total_damage': 0})
-        if not damage_amount_done.isdigit():
-            damage_amount_done = damage_amount_done[:-1]
-        if int(damage_amount_done) is 0:
+        try:
+            damage_amount_done = int(damage_amount_done)
+        except ValueError:
+            damage_amount_done = int(damage_amount_done[:-1])
+        if damage_amount_done == 0:
             if DODGE in row['amount']:
                 player_damage_dict[skill]['dodged'] += 1
             else:
                 player_damage_dict[skill]['missed'] += 1
         else:
-            player_damage_dict['amount'] += int(damage_amount_done)
+            player_damage_dict['amount'] += damage_amount_done
             player_damage_dict[skill]['hit'] += 1
-            player_damage_dict[skill]['total_damage'] += int(
-                damage_amount_done)
+            player_damage_dict[skill]['total_damage'] += damage_amount_done
         return True
 
     def parse_heal(self, row):
@@ -205,7 +206,6 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
             for condition, value in conditions:
                 if condition == 'in_combat':
                     if not value == self.in_combat:
-                        #logging.debug('BREAKING BECAUSE OF COMBAT')
                         break
                 elif value == 'player_id':
                     if not self.player_id in row[condition]:
@@ -217,7 +217,6 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
                     break
             else:
                 try:
-                    logging.info('HANDLER: %s', handler)
                     getattr(self, handler)(row)
                 except Exception as e:
                     logging.error('CONDITIONS: %s', conditions)
