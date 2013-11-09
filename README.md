@@ -1,7 +1,7 @@
 Team-Goldo-Combat-Log-Parser
 ============================
 
-## Combat Log Parser for Star Wars The Old Republic.
+### Combat Log Parser for Star Wars The Old Republic.
 
 Available on http://team-goldo.appspot.com
 
