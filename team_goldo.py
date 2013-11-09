@@ -164,7 +164,8 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         for effect, handler in DMG_RCVD_DISPATCH_DICT.items():
             if effect in row['amount']:
                 getattr(self, handler)(row, skill_dict)
-                return True
+                if handler == 'dodge_or_parry':
+                    return True
         skill_dict['hit'] += 1
         skill_dict['total_damage'] += raw_damage
         self.pull['damage_received'][self.player_id]['amount'] += raw_damage
