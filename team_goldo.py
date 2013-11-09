@@ -4,7 +4,6 @@
 import csv
 import datetime
 import logging
-import string
 
 import webapp2
 import gviz_api
@@ -59,7 +58,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
     def actual_time(self, time, date):
             """Returns the actual time"""
             actual_time = datetime.datetime.strptime(
-                string.join((date, time)), '%Y-%m-%d %H:%M:%S.%f')
+                ' '.join((date, time)), '%Y-%m-%d %H:%M:%S.%f')
             return actual_time
 
     def post(self):
