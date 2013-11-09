@@ -44,24 +44,32 @@ DMG_RCVD_DISPATCH_DICT = {
 
 
 class MainPage(webapp2.RequestHandler):
+    """Application main page, with upload form."""
+
     def get(self):
+        """GET method handler."""
         upload = blobstore.create_upload_url('/upload')
         self.response.out.write(main_page_template.format(upload))
 
 
 #TODO: improve ?
 class Raid:
+    """Class for storing pulls (a.k.a fights) in a dict list."""
     raid = list()
 
 
 class Upload(blobstore_handlers.BlobstoreUploadHandler):
+    """Upload handler page."""
     def actual_time(self, time, date):
-            """Returns the actual time"""
-            actual_time = datetime.datetime.strptime(
-                ' '.join((date, time)), '%Y-%m-%d %H:%M:%S.%f')
-            return actual_time
+        """Returns the actual time"""
+        actual_time = datetime.datetime.strptime(
+            ' '.join((date, time)), '%Y-%m-%d %H:%M:%S.%f')
+        return actual_time
 
     def post(self):
+        """
+        POST method handler: retrieve file, parse it and redirect to results.
+        """
         upload_files = self.get_uploads('file')
         try:
             myFile = upload_files[0]
@@ -83,6 +91,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
             self.redirect('/results')
 
     def parse_enter_combat(self, row):
+        """Parse enter combat."""
         self.in_combat = True
         self.player_id = row['from'][2:]
         current_date = self.current_date
@@ -101,6 +110,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         return True
 
     def parse_damage_done(self, row):
+        """Parse damage done."""
         if NO_DAMAGE in row['amount']:
             return True
         player_damage_dict = self.pull['damage_done'][self.player_id]
@@ -125,6 +135,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         return True
 
     def parse_heal(self, row):
+        """Parse heal done."""
         heal_amount = row['amount'][1:].split(None, 1)[0][:-1]
         try:
             self.pull['heal'][self.player_id] += int(heal_amount)
@@ -133,6 +144,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         return True
 
     def parse_damage_received(self, row):
+        """Parse damage received."""
         damage_dict = self.pull['damage_received']
         player_damage_dict = damage_dict[self.player_id]['attackers']
         attacker = row['from'][1:].split('{', 1)[0]
@@ -159,12 +171,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         return True
 
     def absorb(self, row, skill_dict):
-        """@todo: Docstring for absorb
-
-        :row: @todo
-        :returns: @todo
-
-        """
+        """Some damage got absorbed by a healer 'bubble'."""
         absorbed_damage = int(row['amount'][1:].partition('(')[2].split(
             ABSORB, 1)[0].split(None, 1)[0])
         try:
@@ -174,29 +181,21 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         return True
 
     def dodge_or_parry(self, row, skill_dict):
-        """@todo: Docstring for absorb
-
-        :row: @todo
-        :returns: @todo
-
-        """
+        """Attack dodged or parried."""
         skill_dict['dodged'] += 1
         return True
 
     def shield(self, row, skill_dict):
-        """@todo: Docstring for absorb
-
-        :row: @todo
-        :returns: @todo
-
-        """
+        """Attack partially shielded."""
         skill_dict['shielded'] += 1
         return True
 
     def parse_affect_healer(self, row):
+        """Affect current healer name to healer_id for later purposes."""
         self.healer_id = row['from'][2:]
 
     def parse_exit_combat(self, row):
+        """Parse exit combat."""
         current_date = self.current_date
         self.pull['stop'] = self.actual_time(row['time'][1:], current_date)
         Raid.raid.append(self.pull)
@@ -204,6 +203,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         self.initialize_pull()
 
     def initialize_pull(self):
+        """(Re)initialize pull."""
         self.in_combat = False
         self.player_id = None
         self.healer_id = None
@@ -211,6 +211,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         self.pull_end_time = None
 
     def parse(self, log_file):
+        """Main parsing function."""
         self.player_id = 'None'
         self.initialize_pull()
         for row in log_file:
@@ -220,11 +221,8 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         return True
 
     def dispatch_row(self, row):
-        """@todo: Docstring for dispatch
-
-        :row: @todo
-        :returns: @todo
-
+        """
+        Dispatch row to handlers based on conditions in ROW_DISPATCH_DICT.
         """
         for conditions, handler in ROW_DISPATCH_DICT.items():
             for condition, value in conditions:
@@ -241,11 +239,14 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
                     break
             else:
                 getattr(self, handler)(row)
+            return True
 
 
 class Result(webapp2.RequestHandler):
+    """Class for processing and displaying results in a table."""
 
     def get(self):
+        """GET method handler."""
         # Creating the data
         description = {"pull_start_time": ("datetime", "Pull Start Time"),
                        "total_damage": ("number", "Total Damage"),
@@ -285,7 +286,10 @@ class Result(webapp2.RequestHandler):
 
 
 class Chart(webapp2.RequestHandler):
+    """Class for displaying results charts."""
+
     def get(self, chart_id):
+        """GET method handler."""
         pull = Raid.raid[int(chart_id)]
 
         # Creating the data
