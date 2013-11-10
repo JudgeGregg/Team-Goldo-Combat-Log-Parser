@@ -240,7 +240,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
                     break
             else:
                 getattr(self, handler)(row)
-            return True
+        return True
 
 
 class Result(webapp2.RequestHandler):
