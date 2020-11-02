@@ -163,12 +163,12 @@ main_page_template = """
     rel='stylesheet' type='text/css'>
     <title>Team Goldo Combat Log Parser</title>
     <style>
-        h1 {{ font-family: 'Droid Serif'; }}
-        div {{ font-size: 15px;
+        h1 { font-family: 'Droid Serif'; }
+        div { font-size: 15px;
             color: goldenrod;
-            text-align: center; }}
-        #jawa {{ position: relative;
-                display: none; }}
+            text-align: center; }
+        #jawa { position: relative;
+                display: none; }
     </style></head>
     <body>
         <div id='jawa'>
