@@ -9,7 +9,7 @@ import os
 import gviz_api
 from goldo_templates import (chart_page_template, table_page_template,
                              main_page_template)
-from flask import Flask, render_template, request, redirect, flash
+from flask import Flask, render_template, request, redirect
 from werkzeug.utils import secure_filename
 
 from goldo_mappings import (
@@ -18,7 +18,6 @@ from goldo_mappings import (
     LEAVE_COMBAT, HEAL, REVIVE, NO_DAMAGE)
 
 app = Flask(__name__)
-app.secret_key = b"p/'\xe6\x99\x00\xcd}+;\xd4[\xde\xe3\x8f0\xdd\x87|\xb4\x19O`\xba\xdbn\xc3\x1ceD\x12\x8c\x08_\r\xc9\xc9/G^\xb0\x84N!-5\x06xt\x19"
 UPLOAD_FOLDER = '/tmp'
 ALLOWED_EXTENSIONS = {'txt'}
 
@@ -66,13 +65,11 @@ def allowed_file(filename):
 def upload_file():
     # check if the post request has the file part
     if 'file' not in request.files:
-        flash('No file part')
-        return redirect(request.url)
+        return redirect("/")
     file = request.files['file']
     # if user does not select file, browser also
     # submit an empty part without filename
     if file.filename == '':
-        flash('No selected file')
         return redirect("/")
     if file and allowed_file(file.filename):
         filename = secure_filename(file.filename)
