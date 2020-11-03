@@ -314,7 +314,7 @@ def get_chart(chart_id):
         skill_data = list()
         for player, skill_dict in pull['damage_done'].items():
             for skill, result in skill_dict.items():
-                if skill is not 'amount':
+                if skill != 'amount':
                     skill_data.append(
                         {"player": player,
                          "skill": skill,
@@ -340,7 +340,7 @@ def get_chart(chart_id):
         dmg_data = list()
         for player, attacker_dict in pull['damage_received'].items():
             for attacker, skill_dict in attacker_dict['attackers'].items():
-                if attacker is not 'amount':
+                if attacker != 'amount':
                     for skill, result in skill_dict.items():
                         dmg_data.append(
                             {"player": player,
