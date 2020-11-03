@@ -9,9 +9,7 @@ import os
 import gviz_api
 from goldo_templates import (chart_page_template, table_page_template,
                              main_page_template)
-import datetime
-
-from flask import Flask, render_template, request, redirect
+from flask import Flask, render_template, request, redirect, flash
 from werkzeug.utils import secure_filename
 
 from goldo_mappings import (
@@ -20,6 +18,7 @@ from goldo_mappings import (
     LEAVE_COMBAT, HEAL, REVIVE, NO_DAMAGE)
 
 app = Flask(__name__)
+app.secret_key = b"p/'\xe6\x99\x00\xcd}+;\xd4[\xde\xe3\x8f0\xdd\x87|\xb4\x19O`\xba\xdbn\xc3\x1ceD\x12\x8c\x08_\r\xc9\xc9/G^\xb0\x84N!-5\x06xt\x19"
 UPLOAD_FOLDER = '/tmp'
 ALLOWED_EXTENSIONS = {'txt'}
 
@@ -59,36 +58,29 @@ def get():
     return main_page_template
 
 
-#TODO: improve ?
-class Raid:
-    """Class for storing pulls (a.k.a fights) in a dict list."""
-    raid = list()
-
 def allowed_file(filename):
     return '.' in filename and \
         filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@app.route('/upload', methods=['GET', 'POST'])
+@app.route('/upload', methods=['POST'])
 def upload_file():
-    if request.method == 'POST':
-        # check if the post request has the file part
-        if 'file' not in request.files:
-            flash('No file part')
-            return redirect(request.url)
-        file = request.files['file']
-        # if user does not select file, browser also
-        # submit an empty part without filename
-        if file.filename == '':
-            flash('No selected file')
-            return redirect(request.url)
-        if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
-            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-        with open(os.path.join(app.config['UPLOAD_FOLDER'], file.filename, ), "rt", encoding="ISO-8859-1") as file_:
-            parser = Parser() 
-            parser.main(file_, file.filename)
-        return redirect("/results")
-    return ''''''
+    # check if the post request has the file part
+    if 'file' not in request.files:
+        flash('No file part')
+        return redirect(request.url)
+    file = request.files['file']
+    # if user does not select file, browser also
+    # submit an empty part without filename
+    if file.filename == '':
+        flash('No selected file')
+        return redirect("/")
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+    with open(os.path.join(app.config['UPLOAD_FOLDER'], file.filename, ), "rt", encoding="ISO-8859-1") as file_:
+        parser = Parser()
+        parser.main(file_, file.filename)
+    return redirect("/results")
 
 class Parser():
 
