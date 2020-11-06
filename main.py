@@ -5,12 +5,18 @@ import csv
 import datetime
 import logging
 import os
+import json
+import uuid
 
 import gviz_api
 from goldo_templates import (chart_page_template, table_page_template,
                              main_page_template)
 from flask import Flask, render_template, request, redirect
 from werkzeug.utils import secure_filename
+# Imports the Google Cloud client library
+from google.cloud import datastore
+from dateutil.tz import gettz
+from dateutil.utils import default_tzinfo
 
 from goldo_mappings import (
     ABSORB, DODGE, SHIELD, PARRY, ENTER_COMBAT,
@@ -20,6 +26,7 @@ from goldo_mappings import (
 app = Flask(__name__)
 UPLOAD_FOLDER = '/tmp'
 ALLOWED_EXTENSIONS = {'txt'}
+PARIS_TZ = gettz('Europe/Paris')
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
@@ -85,6 +92,7 @@ class Parser():
         """Returns the actual time"""
         actual_time = datetime.datetime.strptime(
             ' '.join((date, time)), '%Y-%m-%d %H:%M:%S.%f')
+        actual_time = default_tzinfo(actual_time, PARIS_TZ)
         return actual_time
 
     def main(self, uploaded_file, filename):
@@ -212,7 +220,23 @@ class Parser():
         """Parse exit combat."""
         current_date = self.current_date
         self.pull['stop'] = self.actual_time(row['time'][1:], current_date)
-        Raid.raid.append(self.pull)
+        # Instantiates a client
+        datastore_client = datastore.Client()
+        kind = 'Pull'
+        pull_key = datastore_client.key(kind)
+        # Prepares the new entity
+        pull = datastore.Entity(key=pull_key, exclude_from_indexes=("data",))
+        pull["id"] = str(uuid.uuid4())
+        pull["create_datetime"] = datetime.datetime.now()
+        pull["start_datetime"] = self.pull["start"]
+        pull["stop_datetime"] = self.pull["stop"]
+        pull["target"] = self.pull["target"]
+        pull["player(s)"] = len(self.pull["players"])
+        pull["total_damage"] = sum(player['amount'] for player in
+                                   self.pull['damage_done'].values())
+        pull["data"] = json.dumps(self.pull, default=str)
+        # Saves the entity
+        datastore_client.put(pull)
         logging.debug("Pull Dict: {}".format(self.pull))
         self.initialize_pull()
 
@@ -262,23 +286,27 @@ def results():
         description = {"pull_start_time": ("datetime", "Pull Start Time"),
                        "total_damage": ("number", "Total Damage"),
                        "players_number": ("number", "Number of Player(s)"),
-                       "pull_id": ("number", "Pull Id"),
+                       "pull_id": ("string", "Pull Id"),
                        "pull_duration": ("timeofday", "Pull Duration"),
                        "pull_target": ("string", "Pull Target"),
                        }
         data = list()
-        for pull in Raid.raid:
-            if pull['stop'] - pull['start'] < datetime.timedelta(0):
-                pull['stop'] = pull['stop'] + datetime.timedelta(days=1)
+        datastore_client = datastore.Client()
+        query = datastore_client.query(kind='Pull')
+        query.projection = ["id", "start_datetime", "stop_datetime", "target", "total_damage", "player(s)"]
+        results = list(query.fetch())
+
+        for result in results:
+            if result["stop_datetime"] < result["start_datetime"]:
+                result["stop_datetime"] = result["stop_datetime"] + 86400000
             data.append(
-                {"pull_start_time": pull['start'],
-                    "total_damage": sum(player['amount'] for player in
-                                        pull['damage_done'].values()),
-                    "players_number": len(pull['players']),
+                # {"pull_start_time": datetime.datetime.fromtimestamp(result['start_datetime']/1000000, tz=PARIS_TZ),
+                {"pull_start_time": datetime.datetime.fromtimestamp(result['start_datetime']/1000000),
+                    "total_damage": result["total_damage"],
+                    "players_number": result["player(s)"],
                     "pull_id": "<a href=/chart/"+result["id"]+">Pull details<a/>",
-                    "pull_duration":
-                    datetime.datetime.min + (pull['stop'] - pull['start']),
-                    "pull_target": pull['target'], }
+                    "pull_duration": datetime.datetime.min + datetime.timedelta(microseconds=result["stop_datetime"] - result["start_datetime"]),
+                    "pull_target": result['target'], }
             )
 
         #Loading it into gviz_api.DataTable
@@ -287,18 +315,25 @@ def results():
 
         #Creating a JSon string
         json_pull = data_table.ToJSon(
-            columns_order=("pull_id", "pull_start_time", "pull_target",
-                           "pull_duration", "total_damage", "players_number"),
-            order_by=("pull_start_time", "asc"))
+            columns_order=("pull_start_time", "pull_target",
+                           "pull_duration", "total_damage", "players_number", "pull_id"),
+            order_by=("pull_start_time", "desc"))
 
         #Putting the JSon string into the template
         return table_page_template.format(json_pull=json_pull)
 
 
-@app.route("/chart/<int:chart_id>")
+@app.route("/chart/<chart_id>")
 def get_chart(chart_id):
         """GET method handler."""
-        pull = Raid.raid[chart_id]
+        datastore_client = datastore.Client()
+        query = datastore_client.query(kind='Pull')
+        query.add_filter('id', '=', chart_id)
+        results = list(query.fetch())
+        result = results[0]
+        pull = json.loads(result["data"])
+        pull["stop"] = datetime.datetime.strptime(pull["stop"], '%Y-%m-%d %H:%M:%S.%f%z')
+        pull["start"] = datetime.datetime.strptime(pull["start"], '%Y-%m-%d %H:%M:%S.%f%z')
 
         # Creating the data
         skill_table_description = {"player": ("string", "Player"),
