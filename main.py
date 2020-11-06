@@ -194,8 +194,17 @@ class Parser():
 
     def absorb(self, row, skill_dict):
         """Some damage got absorbed by a healer 'bubble'."""
+        raw_damage, dmg_type = row['amount'][1:].split(None, 2)[:2]
+        try:
+            raw_damage = int(raw_damage)
+        except ValueError:
+            raw_damage = int(raw_damage[:-1])
         absorbed_damage = int(row['amount'][1:].partition('(')[2].split(
             ABSORB, 1)[0].split(None, 1)[0])
+        if not absorbed_damage == raw_damage:
+            return True
+        if "shield" in row["amount"]:
+            return True
         try:
             self.pull['heal'][self.healer_id] += int(absorbed_damage)
         except KeyError:
@@ -395,16 +404,21 @@ def get_chart(chart_id):
         bar_dmg_description = {"player": ("string", "Player"),
                                "dps": ("number", "DPS")}
         bar_dmg_data = list()
+
         chart_heal_description = {"player": ("string", "Player"),
                                   "heal": ("number", "heal")}
         chart_heal_data = list()
         bar_heal_description = {"player": ("string", "Player"),
                                 "hps": ("number", "HPS")}
         bar_heal_data = list()
+
         chart_dmg_received_description = {"player": ("string", "Player"),
                                           "damage_received":
                                           ("number", "Damage Received")}
         chart_dmg_received_data = list()
+        bar_dtps_description = {"player": ("string", "Player"),
+                                "dtps": ("number", "DTPS")}
+        bar_dtps_data = list()
 
         for player, damage_dict in pull['damage_done'].items():
             chart_dmg_data.append(
@@ -423,6 +437,9 @@ def get_chart(chart_id):
         for player, damage in pull['damage_received'].items():
             chart_dmg_received_data.append(
                 {"player": player, "damage_received": damage['amount']})
+            bar_dtps_data.append(
+                {"player": player,
+                 "dtps": damage["amount"] / (pull['stop'] - pull['start']).total_seconds()})
 
         # Loading it into gviz_api.DataTable
         pie_dmg_data_table = gviz_api.DataTable(chart_dmg_description)
@@ -440,6 +457,8 @@ def get_chart(chart_id):
         pie_dmg_received_data_table = gviz_api.DataTable(
             chart_dmg_received_description)
         pie_dmg_received_data_table.LoadData(chart_dmg_received_data)
+        bar_dtps_data_table = gviz_api.DataTable(bar_dtps_description)
+        bar_dtps_data_table.LoadData(bar_dtps_data)
 
         # Creating a JSon string
         json_pie_dmg_chart = pie_dmg_data_table.ToJSon(
@@ -452,6 +471,8 @@ def get_chart(chart_id):
             columns_order=("player", "hps"))
         json_pie_dmg_received_chart = pie_dmg_received_data_table.ToJSon(
             columns_order=("player", "damage_received"))
+        json_bar_dtps = bar_dtps_data_table.ToJSon(
+            columns_order=("player", "dtps"))
         json_skill_data_table = skill_data_table.ToJSon(
             columns_order=(
                 "player", "skill", "hit", "dodged", "missed", "total_damage"),
@@ -469,7 +490,8 @@ def get_chart(chart_id):
             bar_heal=json_bar_heal_chart,
             pie_dmg_received=json_pie_dmg_received_chart,
             skill_table=json_skill_data_table,
-            dmg_table=json_dmg_data_table)
+            dmg_table=json_dmg_data_table,
+            bar_dtps=json_bar_dtps)
         return response
 
 if __name__ == '__main__':
