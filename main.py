@@ -275,7 +275,7 @@ def results():
                     "total_damage": sum(player['amount'] for player in
                                         pull['damage_done'].values()),
                     "players_number": len(pull['players']),
-                    "pull_id": Raid.raid.index(pull),
+                    "pull_id": "<a href=/chart/"+result["id"]+">Pull details<a/>",
                     "pull_duration":
                     datetime.datetime.min + (pull['stop'] - pull['start']),
                     "pull_target": pull['target'], }

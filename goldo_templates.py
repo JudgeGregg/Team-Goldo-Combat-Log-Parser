@@ -141,13 +141,6 @@ table_page_template = """
       var json_view = new google.visualization.DataView(json_data);
       json_table.draw(json_view,{{'showRowNumber': true, 'allowHtml' : true,
       'cssClassNames': cssClassNames }});
-      google.visualization.events.addListener
-      (json_table, 'select', function() {{
-      var selection = json_table.getSelection();
-      json_table.setSelection(null);
-      var selected_row = selection[0].row;
-      var selected_pull_number = json_view.getValue(selected_row, 0);
-      document.location.href = '/chart/' + selected_pull_number; }});
     }}
   </script></head>
   <body>
