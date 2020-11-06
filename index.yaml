@@ -1,0 +1,9 @@
+indexes:
+- kind: Pull
+  properties:
+  - name: id
+  - name: player(s)
+  - name: start_datetime
+  - name: stop_datetime
+  - name: target
+  - name: total_damage
