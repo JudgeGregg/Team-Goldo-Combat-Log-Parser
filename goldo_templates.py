@@ -195,6 +195,9 @@ main_page_template = """
                 }}
             </script>
         </form>
+        <p>
+        <a href=/results>Skip upload, and go to results<a/>
+        </p>
         </div>
     </body>
 </html>
