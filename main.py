@@ -201,9 +201,8 @@ class Parser():
             raw_damage = int(raw_damage[:-1])
         absorbed_damage = int(row['amount'][1:].partition('(')[2].split(
             ABSORB, 1)[0].split(None, 1)[0])
-        if not absorbed_damage == raw_damage:
-            return True
-        if "shield" in row["amount"]:
+        if absorbed_damage > raw_damage:
+            # If abs > raw, we're probably dealing with a pure shield absorb
             return True
         try:
             self.pull['heal'][self.healer_id] += int(absorbed_damage)
@@ -309,7 +308,6 @@ def results():
             if result["stop_datetime"] < result["start_datetime"]:
                 result["stop_datetime"] = result["stop_datetime"] + 86400000
             data.append(
-                # {"pull_start_time": datetime.datetime.fromtimestamp(result['start_datetime']/1000000, tz=PARIS_TZ),
                 {"pull_start_time": datetime.datetime.fromtimestamp(result['start_datetime']/1000000),
                     "total_damage": result["total_damage"],
                     "players_number": result["player(s)"],
