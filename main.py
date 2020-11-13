@@ -11,7 +11,7 @@ import uuid
 import gviz_api
 from goldo_templates import (chart_page_template, table_page_template,
                              main_page_template)
-from flask import Flask, render_template, request, redirect
+from flask import Flask, render_template, request, redirect, Response
 from werkzeug.utils import secure_filename
 # Imports the Google Cloud client library
 from google.cloud import datastore
@@ -61,7 +61,9 @@ DMG_RCVD_DISPATCH_DICT = {
 @app.route('/')
 def get():
     """GET method handler."""
-    return main_page_template
+    response = Response(main_page_template)
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
 
 
 def allowed_file(filename):
