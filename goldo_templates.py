@@ -3,7 +3,7 @@
 chart_page_template = """
 <!DOCTYPE html>
 <html><head>
-  <title>Team Goldo Combat Log Parser Results Charts</title>
+  <title>Elegeia Combat Log Parser Results Charts</title>
     <style>
         div{{ font-family: 'Droid Serif'}}
         .goldenrod {{color: goldenrod; text-align: center;}}
@@ -125,7 +125,7 @@ chart_page_template = """
 table_page_template = """
 <!DOCTYPE html>
 <html><head>
-  <link href='http://fonts.googleapis.com/css?family=Droid+Serif'
+  <link href='https://fonts.googleapis.com/css?family=Droid+Serif'
         rel='stylesheet' type='text/css'>
   <style> div{{ font-family: 'Droid Serif'}}
          .goldenrod {{color: goldenrod; text-align: center;}}
@@ -134,7 +134,7 @@ table_page_template = """
          .large-font {{font-family: 'Droid Serif'; font-size: 20px}}
          .medium-font {{font-family: 'Droid Serif'; font-size: 15px}}
   </style>
-  <title>Team Goldo Combat Log Parser Results</title>
+  <title>Elegeia Combat Log Parser Results</title>
   <script src="https://www.google.com/jsapi" type="text/javascript"></script>
   <script>
     google.load('visualization', '1', {{packages:['table']}});
@@ -163,9 +163,9 @@ table_page_template = """
 main_page_template = """
 <!DOCTYPE html>
 <html><head>
-    <link href='http://fonts.googleapis.com/css?family=Droid+Serif'
+    <link href='https://fonts.googleapis.com/css?family=Droid+Serif'
     rel='stylesheet' type='text/css'>
-    <title>Team Goldo Combat Log Parser</title>
+    <title>Elegeia Combat Log Parser</title>
     <style>
         h1 { font-family: 'Droid Serif'; }
         div { font-size: 15px;
