@@ -238,6 +238,8 @@ class Parser():
         pull = datastore.Entity(key=pull_key, exclude_from_indexes=("data",))
         pull["id"] = str(uuid.uuid4())
         pull["create_datetime"] = datetime.datetime.now()
+        if self.pull["stop"] < self.pull["start"]:
+            self.pull["stop"] = self.pull["stop"] + datetime.timedelta(days=1)
         pull["start_datetime"] = self.pull["start"]
         pull["stop_datetime"] = self.pull["stop"]
         pull["target"] = self.pull["target"]
@@ -307,8 +309,6 @@ def results():
         results = list(query.fetch())
 
         for result in results:
-            if result["stop_datetime"] < result["start_datetime"]:
-                result["stop_datetime"] = result["stop_datetime"] + 86400000
             data.append(
                 {"pull_start_time": datetime.datetime.fromtimestamp(result['start_datetime']/1000000),
                     "total_damage": result["total_damage"],
