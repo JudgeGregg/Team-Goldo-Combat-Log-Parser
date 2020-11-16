@@ -11,7 +11,7 @@ import uuid
 import gviz_api
 from goldo_templates import (chart_page_template, table_page_template,
                              main_page_template)
-from flask import Flask, render_template, request, redirect, Response
+from flask import Flask, request, redirect, Response
 from werkzeug.utils import secure_filename
 # Imports the Google Cloud client library
 from google.cloud import datastore
@@ -111,14 +111,20 @@ class Parser():
                 skipinitialspace=True)
             self.parse(log_file)
             uploaded_file.close()
-            # self.redirect('/results')
 
     def parse_enter_combat(self, row):
         """Parse enter combat."""
-        self.in_combat = True
         self.player_id = row['from'][2:]
+        self.in_combat = True
         current_date = self.current_date
         self.pull_start_time = self.actual_time(row['time'][1:], current_date)
+        datastore_client = datastore.Client()
+        query = datastore_client.query(kind='Pull')
+        query.add_filter('start_datetime', '=', self.pull_start_time)
+        query.add_filter('players_set', '=', self.player_id)
+        pulls = list(query.fetch())
+        if pulls:
+            self.ignore_pull = True
         self.pull = dict([
             ('start', self.pull_start_time),
             ('damage_done', {self.player_id: {'amount': 0}}),
@@ -228,33 +234,36 @@ class Parser():
 
     def parse_exit_combat(self, row):
         """Parse exit combat."""
-        current_date = self.current_date
-        self.pull['stop'] = self.actual_time(row['time'][1:], current_date)
-        # Instantiates a client
-        datastore_client = datastore.Client()
-        kind = 'Pull'
-        pull_key = datastore_client.key(kind)
-        # Prepares the new entity
-        pull = datastore.Entity(key=pull_key, exclude_from_indexes=("data",))
-        pull["id"] = str(uuid.uuid4())
-        pull["create_datetime"] = datetime.datetime.now()
-        if self.pull["stop"] < self.pull["start"]:
-            self.pull["stop"] = self.pull["stop"] + datetime.timedelta(days=1)
-        pull["start_datetime"] = self.pull["start"]
-        pull["stop_datetime"] = self.pull["stop"]
-        pull["target"] = self.pull["target"]
-        pull["player(s)"] = len(self.pull["players"])
-        pull["total_damage"] = sum(player['amount'] for player in
-                                   self.pull['damage_done'].values())
-        pull["data"] = json.dumps(self.pull, default=str)
-        # Saves the entity
-        datastore_client.put(pull)
-        logging.debug("Pull Dict: {}".format(self.pull))
+        if not self.ignore_pull:
+            current_date = self.current_date
+            self.pull['stop'] = self.actual_time(row['time'][1:], current_date)
+            # Instantiates a client
+            datastore_client = datastore.Client()
+            kind = 'Pull'
+            pull_key = datastore_client.key(kind)
+            # Prepares the new entity
+            pull = datastore.Entity(key=pull_key, exclude_from_indexes=("data",))
+            pull["id"] = str(uuid.uuid4())
+            pull["create_datetime"] = datetime.datetime.now()
+            if self.pull["stop"] < self.pull["start"]:
+                self.pull["stop"] = self.pull["stop"] + datetime.timedelta(days=1)
+            pull["start_datetime"] = self.pull["start"]
+            pull["stop_datetime"] = self.pull["stop"]
+            pull["target"] = self.pull["target"]
+            pull["players_set"] = list(self.pull["players"])
+            pull["player(s)"] = len(self.pull["players"])
+            pull["total_damage"] = sum(player['amount'] for player in
+                                       self.pull['damage_done'].values())
+            pull["data"] = json.dumps(self.pull, default=str)
+            # Saves the entity
+            datastore_client.put(pull)
+            logging.debug("Pull Dict: {}".format(self.pull))
         self.initialize_pull()
 
     def initialize_pull(self):
         """(Re)initialize pull."""
         self.in_combat = False
+        self.ignore_pull = False
         self.player_id = None
         self.healer_id = None
         self.pull_start_time = None
@@ -273,6 +282,8 @@ class Parser():
         """
         Dispatch row to handlers based on conditions in ROW_DISPATCH_DICT.
         """
+        if self.ignore_pull and not (LEAVE_COMBAT in row["effect"] or DEATH in row["effect"]):
+            return
         for conditions, handler in ROW_DISPATCH_DICT.items():
             for condition, value in conditions:
                 if condition == 'in_combat':
@@ -305,7 +316,7 @@ def results():
         data = list()
         datastore_client = datastore.Client()
         query = datastore_client.query(kind='Pull')
-        query.projection = ["id", "start_datetime", "stop_datetime", "target", "total_damage", "player(s)"]
+        query.projection = ["id", "start_datetime", "stop_datetime", "target", "total_damage", "player(s)", "players_set"]
         results = list(query.fetch())
 
         for result in results:

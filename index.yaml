@@ -3,6 +3,7 @@ indexes:
   properties:
   - name: id
   - name: player(s)
+  - name: players_set
   - name: start_datetime
   - name: stop_datetime
   - name: target
