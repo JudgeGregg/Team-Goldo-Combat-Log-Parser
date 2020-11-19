@@ -149,6 +149,10 @@ table_page_template = """
       google.visualization.Table(document.getElementById('table_div_json'));
       var json_data = new google.visualization.DataTable
       ({json_pull}, 0.6);
+
+      var date_formatter = new google.visualization.DateFormat({{timeZone: 1, pattern: "dd/MM/YYYY HH:mm:ss"}});
+      date_formatter.format(json_data, 0); // Apply formatter to first column (pull_start_time)
+
       var json_view = new google.visualization.DataView(json_data);
       json_table.draw(json_view,{{'showRowNumber': true, 'allowHtml' : true,
       'cssClassNames': cssClassNames }});
