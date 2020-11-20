@@ -320,8 +320,9 @@ def results():
         results = list(query.fetch())
 
         for result in results:
+            start_time = datetime.datetime.fromtimestamp(result['start_datetime']/1000000, tz=PARIS_TZ)
             data.append(
-                {"pull_start_time": datetime.datetime.fromtimestamp(result['start_datetime']/1000000),
+                {"pull_start_time": start_time,
                     "total_damage": result["total_damage"],
                     "players_number": result["player(s)"],
                     "pull_id": "<a href=/chart/"+result["id"]+">Pull details<a/>",
