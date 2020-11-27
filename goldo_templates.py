@@ -3,7 +3,7 @@
 chart_page_template = """
 <!DOCTYPE html>
 <html><head>
-  <title>Team Goldo Combat Log Parser Results Charts</title>
+  <title>Elegeia Combat Log Parser Results Charts</title>
     <style>
         div{{ font-family: 'Droid Serif'}}
         .goldenrod {{color: goldenrod; text-align: center;}}
@@ -25,6 +25,7 @@ chart_page_template = """
     google.setOnLoadCallback(drawHealPieChart);
     google.setOnLoadCallback(drawHealBarChart);
     google.setOnLoadCallback(drawDmgReceivedPieChart);
+    google.setOnLoadCallback(drawDmgReceivedBarChart);
     google.setOnLoadCallback(drawSkillTable);
     google.setOnLoadCallback(drawDmgTable);
     function drawDmgPieChart() {{
@@ -61,6 +62,13 @@ chart_page_template = """
       var json_pie_dmg_received_data = new google.visualization.DataTable
       ({pie_dmg_received}, 0.6);
       json_pie_dmg_received_chart.draw(json_pie_dmg_received_data);
+    }}
+    function drawDmgReceivedBarChart() {{
+      var json_bar_dtps_chart= new google.visualization.BarChart
+      (document.getElementById('barchart_dtps_div_json'));
+      var json_bar_dtps_data = new google.visualization.DataTable
+      ({bar_dtps}, 0.6);
+      json_bar_dtps_chart.draw(json_bar_dtps_data);
     }}
     function drawSkillTable() {{
       var json_table = new google.visualization.Table
@@ -105,6 +113,9 @@ chart_page_template = """
     <div style="clear:both;"></div>
     </div>
     <div id = "piechart_dmg_received_div_json"></div>
+    <div id = "barchart_dtps_div_json"></div>
+    <div style="clear:both;"></div>
+    </div>
     <div id = "skilltable_div_json"></div>
     <div id = "dmgtable_div_json"></div>
   </body>
@@ -114,7 +125,7 @@ chart_page_template = """
 table_page_template = """
 <!DOCTYPE html>
 <html><head>
-  <link href='http://fonts.googleapis.com/css?family=Droid+Serif'
+  <link href='https://fonts.googleapis.com/css?family=Droid+Serif'
         rel='stylesheet' type='text/css'>
   <style> div{{ font-family: 'Droid Serif'}}
          .goldenrod {{color: goldenrod; text-align: center;}}
@@ -123,7 +134,7 @@ table_page_template = """
          .large-font {{font-family: 'Droid Serif'; font-size: 20px}}
          .medium-font {{font-family: 'Droid Serif'; font-size: 15px}}
   </style>
-  <title>Team Goldo Combat Log Parser Results</title>
+  <title>Elegeia Combat Log Parser Results</title>
   <script src="https://www.google.com/jsapi" type="text/javascript"></script>
   <script>
     google.load('visualization', '1', {{packages:['table']}});
@@ -138,16 +149,13 @@ table_page_template = """
       google.visualization.Table(document.getElementById('table_div_json'));
       var json_data = new google.visualization.DataTable
       ({json_pull}, 0.6);
+
+      var date_formatter = new google.visualization.DateFormat({{pattern: "dd/MM/YYYY HH:mm:ss"}});
+      date_formatter.format(json_data, 0); // Apply formatter to first column (pull_start_time)
+
       var json_view = new google.visualization.DataView(json_data);
       json_table.draw(json_view,{{'showRowNumber': true, 'allowHtml' : true,
       'cssClassNames': cssClassNames }});
-      google.visualization.events.addListener
-      (json_table, 'select', function() {{
-      var selection = json_table.getSelection();
-      json_table.setSelection(null);
-      var selected_row = selection[0].row;
-      var selected_pull_number = json_view.getValue(selected_row, 0);
-      document.location.href = '/chart/' + selected_pull_number; }});
     }}
   </script></head>
   <body>
@@ -159,16 +167,16 @@ table_page_template = """
 main_page_template = """
 <!DOCTYPE html>
 <html><head>
-    <link href='http://fonts.googleapis.com/css?family=Droid+Serif'
+    <link href='https://fonts.googleapis.com/css?family=Droid+Serif'
     rel='stylesheet' type='text/css'>
-    <title>Team Goldo Combat Log Parser</title>
+    <title>Elegeia Combat Log Parser</title>
     <style>
-        h1 {{ font-family: 'Droid Serif'; }}
-        div {{ font-size: 15px;
+        h1 { font-family: 'Droid Serif'; }
+        div { font-size: 15px;
             color: goldenrod;
-            text-align: center; }}
-        #jawa {{ position: relative;
-                display: none; }}
+            text-align: center; }
+        #jawa { position: relative;
+                display: none; }
     </style></head>
     <body>
         <div id='jawa'>
@@ -178,7 +186,7 @@ main_page_template = """
         <div id='upload'>
         <p><img src='/img/swtor_logo.png' alt='SWTOR Logo' /></p>
         <h1>Upload Combat Log</h1>
-        <form name="upload" action="{}" method="post"
+        <form name="upload" action="upload" method="post"
             enctype="multipart/form-data">
         <input type="file" name="file" /><br /><br />
         <input type='button' onClick='submitform()' value="Submit">
@@ -191,6 +199,9 @@ main_page_template = """
                 }}
             </script>
         </form>
+        <p>
+        <a href=/results>Skip upload, and go to results<a/>
+        </p>
         </div>
     </body>
 </html>

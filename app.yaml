@@ -1,12 +1,8 @@
-application: team-goldo
-version: 1
-runtime: python27
-api_version: 1
-threadsafe: no
+runtime: python38
 
 handlers:
 - url: /img
   static_dir: img
 
 - url: /.*
-  script: team_goldo.app
+  script: auto

@@ -4,20 +4,35 @@
 import csv
 import datetime
 import logging
+import os
+import json
+import uuid
 
-import webapp2
 import gviz_api
 from goldo_templates import (chart_page_template, table_page_template,
                              main_page_template)
+from flask import Flask, request, redirect, Response
+from werkzeug.utils import secure_filename
+# Imports the Google Cloud client library
+from google.cloud import datastore
+from dateutil.tz import gettz
+from dateutil.utils import default_tzinfo
+
 from goldo_mappings import (
     ABSORB, DODGE, SHIELD, PARRY, ENTER_COMBAT,
     FORCE_ARMOR, PLAYER_TAG, DAMAGE_DONE, DAMAGE_RECEIVED, DEATH,
     LEAVE_COMBAT, HEAL, REVIVE, NO_DAMAGE)
-from google.appengine.ext import blobstore
-from google.appengine.ext.webapp import blobstore_handlers
+
+app = Flask(__name__)
+UPLOAD_FOLDER = '/tmp'
+ALLOWED_EXTENSIONS = {'txt'}
+PARIS_TZ = gettz('Europe/Paris')
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 CSV_HEADER = ['time', 'from', 'to', 'skill', 'effect', 'amount']
 
+# All conditions must be met before handling row
 ROW_DISPATCH_DICT = {
     (('in_combat', False), ('effect', ENTER_COMBAT)):
     'parse_enter_combat',
@@ -43,59 +58,73 @@ DMG_RCVD_DISPATCH_DICT = {
 }
 
 
-class MainPage(webapp2.RequestHandler):
-    """Application main page, with upload form."""
-
-    def get(self):
-        """GET method handler."""
-        upload = blobstore.create_upload_url('/upload')
-        self.response.out.write(main_page_template.format(upload))
-
-
-#TODO: improve ?
-class Raid:
-    """Class for storing pulls (a.k.a fights) in a dict list."""
-    raid = list()
+@app.route('/')
+def get():
+    """GET method handler."""
+    response = Response(main_page_template)
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
 
 
-class Upload(blobstore_handlers.BlobstoreUploadHandler):
-    """Upload handler page."""
+def allowed_file(filename):
+    return '.' in filename and \
+        filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    # check if the post request has the file part
+    if 'file' not in request.files:
+        return redirect("/")
+    file = request.files['file']
+    # if user does not select file, browser also
+    # submit an empty part without filename
+    if file.filename == '':
+        return redirect("/")
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+    with open(os.path.join(app.config['UPLOAD_FOLDER'], file.filename, ), "rt", encoding="ISO-8859-1") as file_:
+        parser = Parser()
+        parser.main(file_, file.filename)
+    return redirect("/results")
+
+class Parser():
+
     def actual_time(self, time, date):
         """Returns the actual time"""
         actual_time = datetime.datetime.strptime(
             ' '.join((date, time)), '%Y-%m-%d %H:%M:%S.%f')
+        actual_time = default_tzinfo(actual_time, PARIS_TZ)
         return actual_time
 
-    def post(self):
+    def main(self, uploaded_file, filename):
         """
         POST method handler: retrieve file, parse it and redirect to results.
         """
-        upload_files = self.get_uploads('file')
         try:
-            myFile = upload_files[0]
-        except IndexError:
+            self.current_date = filename.split('_', 2)[1]
+        except (IndexError, IOError):
             self.redirect('/')
-        #TODO: add file validation
         else:
-            try:
-                uploaded_file = myFile.open()
-                self.current_date = myFile.filename.split('_', 2)[1]
-            except (IndexError, IOError):
-                self.redirect('/')
-            else:
-                log_file = csv.DictReader(
-                    uploaded_file, fieldnames=CSV_HEADER, delimiter=']',
-                    skipinitialspace=True)
-                self.parse(log_file)
-                uploaded_file.close()
-                self.redirect('/results')
+            log_file = csv.DictReader(
+                uploaded_file, fieldnames=CSV_HEADER, delimiter=']',
+                skipinitialspace=True)
+            self.parse(log_file)
+            uploaded_file.close()
 
     def parse_enter_combat(self, row):
         """Parse enter combat."""
-        self.in_combat = True
         self.player_id = row['from'][2:]
+        self.in_combat = True
         current_date = self.current_date
         self.pull_start_time = self.actual_time(row['time'][1:], current_date)
+        datastore_client = datastore.Client()
+        query = datastore_client.query(kind='Pull')
+        query.add_filter('start_datetime', '=', self.pull_start_time)
+        query.add_filter('players_set', '=', self.player_id)
+        pulls = list(query.fetch())
+        if pulls:
+            self.ignore_pull = True
         self.pull = dict([
             ('start', self.pull_start_time),
             ('damage_done', {self.player_id: {'amount': 0}}),
@@ -173,8 +202,16 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
 
     def absorb(self, row, skill_dict):
         """Some damage got absorbed by a healer 'bubble'."""
+        raw_damage, dmg_type = row['amount'][1:].split(None, 2)[:2]
+        try:
+            raw_damage = int(raw_damage)
+        except ValueError:
+            raw_damage = int(raw_damage[:-1])
         absorbed_damage = int(row['amount'][1:].partition('(')[2].split(
             ABSORB, 1)[0].split(None, 1)[0])
+        if absorbed_damage > raw_damage:
+            # If abs > raw, we're probably dealing with a pure shield absorb
+            return True
         try:
             self.pull['heal'][self.healer_id] += int(absorbed_damage)
         except KeyError:
@@ -197,15 +234,36 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
 
     def parse_exit_combat(self, row):
         """Parse exit combat."""
-        current_date = self.current_date
-        self.pull['stop'] = self.actual_time(row['time'][1:], current_date)
-        Raid.raid.append(self.pull)
-        logging.debug("Pull Dict: {}".format(self.pull))
+        if not self.ignore_pull:
+            current_date = self.current_date
+            self.pull['stop'] = self.actual_time(row['time'][1:], current_date)
+            # Instantiates a client
+            datastore_client = datastore.Client()
+            kind = 'Pull'
+            pull_key = datastore_client.key(kind)
+            # Prepares the new entity
+            pull = datastore.Entity(key=pull_key, exclude_from_indexes=("data",))
+            pull["id"] = str(uuid.uuid4())
+            pull["create_datetime"] = datetime.datetime.now()
+            if self.pull["stop"] < self.pull["start"]:
+                self.pull["stop"] = self.pull["stop"] + datetime.timedelta(days=1)
+            pull["start_datetime"] = self.pull["start"]
+            pull["stop_datetime"] = self.pull["stop"]
+            pull["target"] = self.pull["target"]
+            pull["players_set"] = list(self.pull["players"])
+            pull["player(s)"] = len(self.pull["players"])
+            pull["total_damage"] = sum(player['amount'] for player in
+                                       self.pull['damage_done'].values())
+            pull["data"] = json.dumps(self.pull, default=str)
+            # Saves the entity
+            datastore_client.put(pull)
+            logging.debug("Pull Dict: {}".format(self.pull))
         self.initialize_pull()
 
     def initialize_pull(self):
         """(Re)initialize pull."""
         self.in_combat = False
+        self.ignore_pull = False
         self.player_id = None
         self.healer_id = None
         self.pull_start_time = None
@@ -216,8 +274,7 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         self.player_id = 'None'
         self.initialize_pull()
         for row in log_file:
-            row = {key: unicode(row_field, 'iso-8859-1').encode('utf-8')
-                   for key, row_field in row.items()}
+            row = {key: row_field for key, row_field in row.items()}
             self.dispatch_row(row)
         return True
 
@@ -225,6 +282,8 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         """
         Dispatch row to handlers based on conditions in ROW_DISPATCH_DICT.
         """
+        if self.ignore_pull and not (LEAVE_COMBAT in row["effect"] or DEATH in row["effect"]):
+            return
         for conditions, handler in ROW_DISPATCH_DICT.items():
             for condition, value in conditions:
                 if condition == 'in_combat':
@@ -243,32 +302,32 @@ class Upload(blobstore_handlers.BlobstoreUploadHandler):
         return True
 
 
-class Result(webapp2.RequestHandler):
-    """Class for processing and displaying results in a table."""
-
-    def get(self):
+@app.route('/results')
+def results():
         """GET method handler."""
         # Creating the data
         description = {"pull_start_time": ("datetime", "Pull Start Time"),
                        "total_damage": ("number", "Total Damage"),
                        "players_number": ("number", "Number of Player(s)"),
-                       "pull_id": ("number", "Pull Id"),
+                       "pull_id": ("string", "Pull Id"),
                        "pull_duration": ("timeofday", "Pull Duration"),
                        "pull_target": ("string", "Pull Target"),
                        }
         data = list()
-        for pull in Raid.raid:
-            if pull['stop'] - pull['start'] < datetime.timedelta(0):
-                pull['stop'] = pull['stop'] + datetime.timedelta(days=1)
+        datastore_client = datastore.Client()
+        query = datastore_client.query(kind='Pull')
+        query.projection = ["id", "start_datetime", "stop_datetime", "target", "total_damage", "player(s)", "players_set"]
+        results = list(query.fetch())
+
+        for result in results:
+            start_time = datetime.datetime.fromtimestamp(result['start_datetime']/1000000, tz=PARIS_TZ)
             data.append(
-                {"pull_start_time": pull['start'],
-                    "total_damage": sum(player['amount'] for player in
-                                        pull['damage_done'].values()),
-                    "players_number": len(pull['players']),
-                    "pull_id": Raid.raid.index(pull),
-                    "pull_duration":
-                    datetime.datetime.min + (pull['stop'] - pull['start']),
-                    "pull_target": pull['target'], }
+                {"pull_start_time": start_time,
+                    "total_damage": result["total_damage"],
+                    "players_number": result["player(s)"],
+                    "pull_id": "<a href=/chart/"+result["id"]+">Pull details<a/>",
+                    "pull_duration": datetime.datetime.min + datetime.timedelta(microseconds=result["stop_datetime"] - result["start_datetime"]),
+                    "pull_target": result['target'], }
             )
 
         #Loading it into gviz_api.DataTable
@@ -277,21 +336,25 @@ class Result(webapp2.RequestHandler):
 
         #Creating a JSon string
         json_pull = data_table.ToJSon(
-            columns_order=("pull_id", "pull_start_time", "pull_target",
-                           "pull_duration", "total_damage", "players_number"),
-            order_by=("pull_start_time", "asc"))
+            columns_order=("pull_start_time", "pull_target",
+                           "pull_duration", "total_damage", "players_number", "pull_id"),
+            order_by=("pull_start_time", "desc"))
 
         #Putting the JSon string into the template
-        self.response.out.write(
-            table_page_template.format(json_pull=json_pull))
+        return table_page_template.format(json_pull=json_pull)
 
 
-class Chart(webapp2.RequestHandler):
-    """Class for displaying results charts."""
-
-    def get(self, chart_id):
+@app.route("/chart/<chart_id>")
+def get_chart(chart_id):
         """GET method handler."""
-        pull = Raid.raid[int(chart_id)]
+        datastore_client = datastore.Client()
+        query = datastore_client.query(kind='Pull')
+        query.add_filter('id', '=', chart_id)
+        results = list(query.fetch())
+        result = results[0]
+        pull = json.loads(result["data"])
+        pull["stop"] = datetime.datetime.strptime(pull["stop"], '%Y-%m-%d %H:%M:%S.%f%z')
+        pull["start"] = datetime.datetime.strptime(pull["start"], '%Y-%m-%d %H:%M:%S.%f%z')
 
         # Creating the data
         skill_table_description = {"player": ("string", "Player"),
@@ -304,7 +367,7 @@ class Chart(webapp2.RequestHandler):
         skill_data = list()
         for player, skill_dict in pull['damage_done'].items():
             for skill, result in skill_dict.items():
-                if skill is not 'amount':
+                if skill != 'amount':
                     skill_data.append(
                         {"player": player,
                          "skill": skill,
@@ -330,7 +393,7 @@ class Chart(webapp2.RequestHandler):
         dmg_data = list()
         for player, attacker_dict in pull['damage_received'].items():
             for attacker, skill_dict in attacker_dict['attackers'].items():
-                if attacker is not 'amount':
+                if attacker != 'amount':
                     for skill, result in skill_dict.items():
                         dmg_data.append(
                             {"player": player,
@@ -353,34 +416,42 @@ class Chart(webapp2.RequestHandler):
         bar_dmg_description = {"player": ("string", "Player"),
                                "dps": ("number", "DPS")}
         bar_dmg_data = list()
+
         chart_heal_description = {"player": ("string", "Player"),
                                   "heal": ("number", "heal")}
         chart_heal_data = list()
         bar_heal_description = {"player": ("string", "Player"),
                                 "hps": ("number", "HPS")}
         bar_heal_data = list()
+
         chart_dmg_received_description = {"player": ("string", "Player"),
                                           "damage_received":
                                           ("number", "Damage Received")}
         chart_dmg_received_data = list()
+        bar_dtps_description = {"player": ("string", "Player"),
+                                "dtps": ("number", "DTPS")}
+        bar_dtps_data = list()
 
-        for player, damage_dict in pull['damage_done'].iteritems():
+        for player, damage_dict in pull['damage_done'].items():
             chart_dmg_data.append(
                 {"player": player, "damage": damage_dict['amount']})
             bar_dmg_data.append(
                 {"player": player, "dps": damage_dict['amount'] / (
                     pull['stop'] - pull['start']).total_seconds()})
 
-        for player, heal in pull['heal'].iteritems():
+        for player, heal in pull['heal'].items():
             chart_heal_data.append(
                 {"player": player, "heal": heal})
             bar_heal_data.append(
                 {"player": player,
                  "hps": heal / (pull['stop'] - pull['start']).total_seconds()})
 
-        for player, damage in pull['damage_received'].iteritems():
+        for player, damage in pull['damage_received'].items():
             chart_dmg_received_data.append(
                 {"player": player, "damage_received": damage['amount']})
+            bar_dtps_data.append(
+                {"player": player,
+                 "dtps": damage["amount"] / (pull['stop'] - pull['start']).total_seconds()})
 
         # Loading it into gviz_api.DataTable
         pie_dmg_data_table = gviz_api.DataTable(chart_dmg_description)
@@ -398,6 +469,8 @@ class Chart(webapp2.RequestHandler):
         pie_dmg_received_data_table = gviz_api.DataTable(
             chart_dmg_received_description)
         pie_dmg_received_data_table.LoadData(chart_dmg_received_data)
+        bar_dtps_data_table = gviz_api.DataTable(bar_dtps_description)
+        bar_dtps_data_table.LoadData(bar_dtps_data)
 
         # Creating a JSon string
         json_pie_dmg_chart = pie_dmg_data_table.ToJSon(
@@ -410,6 +483,8 @@ class Chart(webapp2.RequestHandler):
             columns_order=("player", "hps"))
         json_pie_dmg_received_chart = pie_dmg_received_data_table.ToJSon(
             columns_order=("player", "damage_received"))
+        json_bar_dtps = bar_dtps_data_table.ToJSon(
+            columns_order=("player", "dtps"))
         json_skill_data_table = skill_data_table.ToJSon(
             columns_order=(
                 "player", "skill", "hit", "dodged", "missed", "total_damage"),
@@ -427,10 +502,16 @@ class Chart(webapp2.RequestHandler):
             bar_heal=json_bar_heal_chart,
             pie_dmg_received=json_pie_dmg_received_chart,
             skill_table=json_skill_data_table,
-            dmg_table=json_dmg_data_table)
-        self.response.out.write(response)
+            dmg_table=json_dmg_data_table,
+            bar_dtps=json_bar_dtps)
+        return response
 
-app = webapp2.WSGIApplication([('/', MainPage), ('/upload',
-                              Upload), ('/chart/(\d+)', Chart), ('/results',
-                              Result)],
-                              debug=True)
+if __name__ == '__main__':
+    # This is used when running locally only. When deploying to Google App
+    # Engine, a webserver process such as Gunicorn will serve the app. This
+    # can be configured by adding an `entrypoint` to app.yaml.
+    # Flask's development server will automatically serve static files in
+    # the "static" directory. See:
+    # http://flask.pocoo.org/docs/1.0/quickstart/#static-files. Once deployed,
+    # App Engine itself will serve those files as configured in app.yaml.
+    app.run(host='127.0.0.1', port=5000, debug=True)
