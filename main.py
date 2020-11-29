@@ -19,7 +19,7 @@ from dateutil.tz import gettz
 from dateutil.utils import default_tzinfo
 
 from goldo_mappings import (
-    ABSORB, DODGE, SHIELD, PARRY, ENTER_COMBAT,
+    ABSORB, DODGE, MISS, SHIELD, PARRY, ENTER_COMBAT,
     FORCE_ARMOR, PLAYER_TAG, DAMAGE_DONE, DAMAGE_RECEIVED, DEATH,
     LEAVE_COMBAT, HEAL, REVIVE, NO_DAMAGE)
 
@@ -51,6 +51,7 @@ ROW_DISPATCH_DICT = {
 }
 
 DMG_RCVD_DISPATCH_DICT = {
+    MISS: 'miss',
     ABSORB: 'absorb',
     DODGE: 'dodge_or_parry',
     PARRY: 'dodge_or_parry',
@@ -181,7 +182,8 @@ class Parser():
         raw_damage, dmg_type = row['amount'][1:].split(None, 2)[:2]
         player_damage_dict.setdefault(attacker, dict())
         player_damage_dict[attacker].setdefault(
-            skill, {'hit': 0, 'dodged': 0, 'shielded': 0, 'total_damage': 0})
+            skill,
+            {'hit': 0, 'dodged': 0, 'shielded': 0, 'missed': 0, 'total_damage': 0})
         skill_dict = player_damage_dict[attacker][skill]
         try:
             raw_damage = int(raw_damage)
@@ -193,7 +195,7 @@ class Parser():
         for effect, handler in DMG_RCVD_DISPATCH_DICT.items():
             if effect in row['amount']:
                 getattr(self, handler)(row, skill_dict)
-                if handler == 'dodge_or_parry':
+                if handler in ['dodge_or_parry', 'miss']:
                     return True
         skill_dict['hit'] += 1
         skill_dict['total_damage'] += raw_damage
@@ -226,6 +228,11 @@ class Parser():
     def shield(self, row, skill_dict):
         """Attack partially shielded."""
         skill_dict['shielded'] += 1
+        return True
+
+    def miss(self, row, skill_dict):
+        """Attack missed."""
+        skill_dict['missed'] += 1
         return True
 
     def parse_affect_healer(self, row):

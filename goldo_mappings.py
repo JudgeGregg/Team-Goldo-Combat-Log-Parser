@@ -1,5 +1,6 @@
 """ Mapping from text to code for team goldo app."""
 
+MISS = '{836045448945502}'
 ABSORB = '{836045448945511}'
 DODGE = '{836045448945505}'
 PARRY = '{836045448945508}'
