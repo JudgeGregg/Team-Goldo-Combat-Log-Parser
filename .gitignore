@@ -3,3 +3,7 @@
 gviz*
 .python-version
 google-cloud-sdk*
+
+# Tests coverage
+.coverage
+htmlcov
