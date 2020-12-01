@@ -393,6 +393,7 @@ def get_chart(chart_id):
                                  "attacker": ("string", "Attacker"),
                                  "skill": ("string", "Skill"),
                                  "hit": ("number", "Hits"),
+                                 "missed": ("number", "Missed"),
                                  "shielded": ("number", "Shielded"),
                                  "dodged": ("number", "Dodged"),
                                  "total_damage": ("number", "Total Damage"),
@@ -407,6 +408,7 @@ def get_chart(chart_id):
                              "attacker": attacker,
                              "skill": skill,
                              "hit": result.get('hit'),
+                             "missed": result.get('missed'),
                              "dodged": result.get('dodged'),
                              "shielded": result.get('shielded'),
                              "total_damage": result.get('total_damage'),
@@ -497,7 +499,7 @@ def get_chart(chart_id):
                 "player", "skill", "hit", "dodged", "missed", "total_damage"),
             order_by=("player", "skill"))
         json_dmg_data_table = dmg_data_table.ToJSon(columns_order=(
-            "player", "attacker", "skill", "hit",
+            "player", "attacker", "skill", "hit", "missed",
             "dodged", "shielded", 'total_damage', 'dmg_type'),
             order_by=("player", "attacker", "skill"))
 
