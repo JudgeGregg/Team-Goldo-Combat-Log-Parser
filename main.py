@@ -510,7 +510,11 @@ def get_chart(chart_id):
             pie_dmg_received=json_pie_dmg_received_chart,
             skill_table=json_skill_data_table,
             dmg_table=json_dmg_data_table,
-            bar_dtps=json_bar_dtps)
+            bar_dtps=json_bar_dtps,
+            pull_target=pull["target"],
+            pull_start_time=pull["start"],
+            pull_duration=pull["stop"] - pull["start"],
+        )
         return response
 
 if __name__ == '__main__':

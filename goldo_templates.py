@@ -5,9 +5,8 @@ chart_page_template = """
 <html><head>
   <title>Elegeia Combat Log Parser Results Charts</title>
     <style>
-        div{{ font-family: 'Droid Serif'}}
-        .goldenrod {{color: goldenrod; text-align: center;}}
-        .bold {{font-weight: bold}}
+        .goldenrod {{ font-family: 'Droid Serif'; color:
+                    goldenrod; text-align: center; font-weight: bold}}
         .beige-background {{background-color: beige;}}
         .large-font {{font-family: 'Droid Serif'; font-size: 20px}}
         .medium-font {{font-family: 'Droid Serif'; font-size: 15px}}
@@ -15,10 +14,10 @@ chart_page_template = """
   <script src="https://www.google.com/jsapi" type="text/javascript"></script>
   <script>
         var cssClassNames = {{
-        'headerRow': 'goldenrod bold large-font',
+        'headerRow': 'goldenrod large-font',
         'oddTableRow': 'beige-background',
-        'tableCell': 'goldenrod bold medium-font google-greg',
-        'rowNumberCell': 'goldenrod bold'}}
+        'tableCell': 'goldenrod medium-font google-greg',
+        'rowNumberCell': 'goldenrod '}}
     google.load('visualization', '1', {{packages:['corechart', 'table']}});
     google.setOnLoadCallback(drawDmgPieChart);
     google.setOnLoadCallback(drawDmgBarChart);
@@ -102,7 +101,18 @@ chart_page_template = """
     }}
     </script></head>
   <body>
-    <div id = dmg_container>
+    <div id = info_container class="goldenrod">
+    <p>
+    Target: {pull_target}
+    </p>
+    <p>
+    Start Time: {pull_start_time}
+    </p>
+    <p>
+    Duration: {pull_duration}
+    </p>
+    </div>
+    <div id = dmg_container class=>
     <div id = piechart_dmg_div_json></div>
     <div id = barchart_dmg_div_json></div>
     <div style="clear:both;"></div>
