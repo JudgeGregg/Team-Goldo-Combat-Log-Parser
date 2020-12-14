@@ -48,6 +48,8 @@ ROW_DISPATCH_DICT = {
     'parse_exit_combat',
     (('in_combat', True), ('effect', LEAVE_COMBAT), ('to', 'player_id')):
     'parse_exit_combat',
+    (('in_combat', True), ('amount', '<'), ('from', 'player_id')):
+    'parse_threat',
 }
 
 DMG_RCVD_DISPATCH_DICT = {
@@ -133,6 +135,7 @@ class Parser():
                 'attackers': dict(),
                 'amount': 0}, }),
             ('heal', {self.player_id: 0}),
+            ('threat', {self.player_id: 0}),
             ('target', None),
             ('players', set([self.player_id])), ])
         logging.debug("Entering New Combat: {0} - {1}".format(
@@ -238,6 +241,14 @@ class Parser():
     def parse_affect_healer(self, row):
         """Affect current healer name to healer_id for later purposes."""
         self.healer_id = row['from'][2:]
+
+    def parse_threat(self, row):
+        """Affect current healer name to healer_id for later purposes."""
+        amount = row["amount"]
+        threat_start_char_index = amount.index("<")+1
+        threat_stop_char_index = amount.index(">")
+        threat_value = amount[threat_start_char_index:threat_stop_char_index]
+        self.pull["threat"][self.player_id] += int(threat_value)
 
     def parse_exit_combat(self, row):
         """Parse exit combat."""
@@ -462,6 +473,14 @@ def get_chart(chart_id):
                 {"player": player,
                  "dtps": damage["amount"] / (pull['stop'] - pull['start']).total_seconds()})
 
+        chart_threat_description = {"player": ("string", "Player"),
+                                    "threat": ("number", "threat")}
+        chart_threat_data = list()
+        if pull.get("threat"):
+            for player, threat in pull["threat"].items():
+                chart_threat_data.append(
+                    {"player": player, "threat": threat})
+
         # Loading it into gviz_api.DataTable
         pie_dmg_data_table = gviz_api.DataTable(chart_dmg_description)
         pie_dmg_data_table.LoadData(chart_dmg_data)
@@ -480,6 +499,9 @@ def get_chart(chart_id):
         pie_dmg_received_data_table.LoadData(chart_dmg_received_data)
         bar_dtps_data_table = gviz_api.DataTable(bar_dtps_description)
         bar_dtps_data_table.LoadData(bar_dtps_data)
+
+        pie_threat_data_table = gviz_api.DataTable(chart_threat_description)
+        pie_threat_data_table.LoadData(chart_threat_data)
 
         # Creating a JSon string
         json_pie_dmg_chart = pie_dmg_data_table.ToJSon(
@@ -502,6 +524,8 @@ def get_chart(chart_id):
             "player", "attacker", "skill", "hit", "missed",
             "dodged", "shielded", 'total_damage', 'dmg_type'),
             order_by=("player", "attacker", "skill"))
+        json_pie_threat_chart = pie_threat_data_table.ToJSon(
+            columns_order=("player", "threat"))
 
         # Putting the JSon string into the template
         response = chart_page_template.format(
@@ -513,6 +537,7 @@ def get_chart(chart_id):
             skill_table=json_skill_data_table,
             dmg_table=json_dmg_data_table,
             bar_dtps=json_bar_dtps,
+            pie_threat=json_pie_threat_chart,
             pull_target=pull["target"],
             pull_start_time=pull["start"],
             pull_duration=pull["stop"] - pull["start"],

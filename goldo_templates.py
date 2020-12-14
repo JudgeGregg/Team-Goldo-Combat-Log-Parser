@@ -27,6 +27,7 @@ chart_page_template = """
     google.setOnLoadCallback(drawDmgReceivedBarChart);
     google.setOnLoadCallback(drawSkillTable);
     google.setOnLoadCallback(drawDmgTable);
+    google.setOnLoadCallback(drawThreatPieChart);
     function drawDmgPieChart() {{
       var json_pie_dmg_chart = new google.visualization.PieChart
       (document.getElementById('piechart_dmg_div_json'));
@@ -99,6 +100,13 @@ chart_page_template = """
       json_table.draw(json_view,{{'showRowNumber': true, 'allowHtml' : true,
       'cssClassNames': cssClassNames }});
     }}
+    function drawThreatPieChart() {{
+      var json_pie_threat_chart = new google.visualization.PieChart
+      (document.getElementById('piechart_threat_div_json'));
+      var json_pie_threat_data = new google.visualization.DataTable
+      ({pie_threat}, 0.6);
+      json_pie_threat_chart.draw(json_pie_threat_data);
+    }}
     </script></head>
   <body>
     <div id = info_container class="goldenrod">
@@ -124,6 +132,7 @@ chart_page_template = """
     </div>
     <div id = "piechart_dmg_received_div_json"></div>
     <div id = "barchart_dtps_div_json"></div>
+    <div id = "piechart_threat_div_json"></div>
     <div style="clear:both;"></div>
     </div>
     <div id = "skilltable_div_json"></div>
