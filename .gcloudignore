@@ -21,3 +21,7 @@ __pycache__/
 google-cloud-sdk*
 sample_file
 sdk/
+htmlcov/
+pycodestyle.cfg
+tests/
+tests_goldo.py
