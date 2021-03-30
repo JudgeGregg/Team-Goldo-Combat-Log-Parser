@@ -74,6 +74,7 @@ def allowed_file(filename):
     return '.' in filename and \
         filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     # check if the post request has the file part
@@ -91,6 +92,7 @@ def upload_file():
         parser = Parser()
         parser.main(file_, file.filename)
     return redirect("/results")
+
 
 class Parser():
 
@@ -252,7 +254,7 @@ class Parser():
     def parse_threat(self, row):
         """Affect current healer name to healer_id for later purposes."""
         amount = row["amount"]
-        threat_start_char_index = amount.index("<")+1
+        threat_start_char_index = amount.index("<") + 1
         threat_stop_char_index = amount.index(">")
         threat_value = amount[threat_start_char_index:threat_stop_char_index]
         self.pull["threat"][self.player_id] += int(threat_value)
@@ -315,12 +317,12 @@ class Parser():
                     if not value == self.in_combat:
                         break
                 elif value == 'player_id':
-                    if not self.player_id in row[condition]:
+                    if self.player_id not in row[condition]:
                         break
                 elif value == REVIVE:
                     if REVIVE in row[condition]:
                         break
-                elif not value in row[condition]:
+                elif value not in row[condition]:
                     break
             else:
                 getattr(self, handler)(row)
@@ -329,229 +331,230 @@ class Parser():
 
 @app.route('/results')
 def results():
-        """GET method handler."""
-        # Creating the data
-        description = {"pull_start_time": ("datetime", "Pull Start Time"),
-                       "total_damage": ("number", "Total Damage"),
-                       "players_number": ("number", "Number of Player(s)"),
-                       "pull_id": ("string", "Pull Id"),
-                       "pull_duration": ("timeofday", "Pull Duration"),
-                       "pull_target": ("string", "Pull Target"),
-                       }
-        data = list()
-        datastore_client = datastore.Client()
-        query = datastore_client.query(kind='Pull')
-        query.projection = ["id", "start_datetime", "stop_datetime", "target", "total_damage", "player(s)", "players_set"]
-        results = list(query.fetch())
+    """GET method handler."""
+    # Creating the data
+    description = {"pull_start_time": ("datetime", "Pull Start Time"),
+                   "total_damage": ("number", "Total Damage"),
+                   "players_number": ("number", "Number of Player(s)"),
+                   "pull_id": ("string", "Pull Id"),
+                   "pull_duration": ("timeofday", "Pull Duration"),
+                   "pull_target": ("string", "Pull Target"),
+                   }
+    data = list()
+    datastore_client = datastore.Client()
+    query = datastore_client.query(kind='Pull')
+    query.projection = ["id", "start_datetime", "stop_datetime", "target", "total_damage", "player(s)", "players_set"]
+    results = list(query.fetch())
 
-        for result in results:
-            start_time = datetime.datetime.fromtimestamp(result['start_datetime']/1000000, tz=PARIS_TZ)
-            data.append(
-                {"pull_start_time": start_time,
-                    "total_damage": result["total_damage"],
-                    "players_number": result["player(s)"],
-                    "pull_id": "<a href=/chart/"+result["id"]+">Pull details<a/>",
-                    "pull_duration": datetime.datetime.min + datetime.timedelta(microseconds=result["stop_datetime"] - result["start_datetime"]),
-                    "pull_target": result['target'], }
-            )
+    for result in results:
+        start_time = datetime.datetime.fromtimestamp(result['start_datetime'] / 1000000, tz=PARIS_TZ)
+        data.append(
+            {"pull_start_time": start_time,
+                "total_damage": result["total_damage"],
+                "players_number": result["player(s)"],
+                "pull_id": "<a href=/chart/" + result["id"] + ">Pull details<a/>",
+                "pull_duration": datetime.datetime.min + datetime.timedelta(microseconds=result["stop_datetime"] - result["start_datetime"]),
+                "pull_target": result['target'], }
+        )
 
-        #Loading it into gviz_api.DataTable
-        data_table = gviz_api.DataTable(description)
-        data_table.LoadData(data)
+    # Loading it into gviz_api.DataTable
+    data_table = gviz_api.DataTable(description)
+    data_table.LoadData(data)
 
-        #Creating a JSon string
-        json_pull = data_table.ToJSon(
-            columns_order=("pull_start_time", "pull_target",
-                           "pull_duration", "total_damage", "players_number", "pull_id"),
-            order_by=("pull_start_time", "desc"))
+    # Creating a JSon string
+    json_pull = data_table.ToJSon(
+        columns_order=("pull_start_time", "pull_target",
+                       "pull_duration", "total_damage", "players_number", "pull_id"),
+        order_by=("pull_start_time", "desc"))
 
-        #Putting the JSon string into the template
-        return table_page_template.format(json_pull=json_pull)
+    # Putting the JSon string into the template
+    return table_page_template.format(json_pull=json_pull)
 
 
 @app.route("/chart/<chart_id>")
 def get_chart(chart_id):
-        """GET method handler."""
-        datastore_client = datastore.Client()
-        query = datastore_client.query(kind='Pull')
-        query.add_filter('id', '=', chart_id)
-        results = list(query.fetch())
-        result = results[0]
-        pull = json.loads(result["data"])
-        pull["stop"] = datetime.datetime.strptime(pull["stop"], '%Y-%m-%d %H:%M:%S.%f%z')
-        pull["start"] = datetime.datetime.strptime(pull["start"], '%Y-%m-%d %H:%M:%S.%f%z')
+    """GET method handler."""
+    datastore_client = datastore.Client()
+    query = datastore_client.query(kind='Pull')
+    query.add_filter('id', '=', chart_id)
+    results = list(query.fetch())
+    result = results[0]
+    pull = json.loads(result["data"])
+    pull["stop"] = datetime.datetime.strptime(pull["stop"], '%Y-%m-%d %H:%M:%S.%f%z')
+    pull["start"] = datetime.datetime.strptime(pull["start"], '%Y-%m-%d %H:%M:%S.%f%z')
 
-        # Creating the data
-        skill_table_description = {"player": ("string", "Player"),
-                                   "skill": ("string", "Skill"),
-                                   "hit": ("number", "Hits"),
-                                   "missed": ("number", "Missed"),
-                                   "dodged": ("number", "Dodged"),
-                                   "total_damage": (
-                                       "number", "Total Damage")}
-        skill_data = list()
-        for player, skill_dict in pull['damage_done'].items():
-            for skill, result in skill_dict.items():
-                if skill != 'amount':
-                    skill_data.append(
+    # Creating the data
+    skill_table_description = {"player": ("string", "Player"),
+                               "skill": ("string", "Skill"),
+                               "hit": ("number", "Hits"),
+                               "missed": ("number", "Missed"),
+                               "dodged": ("number", "Dodged"),
+                               "total_damage": (
+                                   "number", "Total Damage")}
+    skill_data = list()
+    for player, skill_dict in pull['damage_done'].items():
+        for skill, result in skill_dict.items():
+            if skill != 'amount':
+                skill_data.append(
+                    {"player": player,
+                     "skill": skill,
+                     "hit": result.get('hit'),
+                     "dodged": result.get('dodged'),
+                     "missed": result.get('missed'),
+                     "total_damage": result.get('total_damage')}
+                )
+
+    # Loading it into gviz_api.DataTable
+    skill_data_table = gviz_api.DataTable(skill_table_description)
+    skill_data_table.LoadData(skill_data)
+
+    # Creating the data
+    dmg_table_description = {"player": ("string", "Player"),
+                             "attacker": ("string", "Attacker"),
+                             "skill": ("string", "Skill"),
+                             "hit": ("number", "Hits"),
+                             "missed": ("number", "Missed"),
+                             "shielded": ("number", "Shielded"),
+                             "dodged": ("number", "Dodged"),
+                             "resisted": ("number", "Resisted"),
+                             "total_damage": ("number", "Total Damage"),
+                             "dmg_type": ("string", "Damage Type")}
+    dmg_data = list()
+    for player, attacker_dict in pull['damage_received'].items():
+        for attacker, skill_dict in attacker_dict['attackers'].items():
+            if attacker != 'amount':
+                for skill, result in skill_dict.items():
+                    dmg_data.append(
                         {"player": player,
+                         "attacker": attacker,
                          "skill": skill,
                          "hit": result.get('hit'),
-                         "dodged": result.get('dodged'),
                          "missed": result.get('missed'),
-                         "total_damage": result.get('total_damage')}
+                         "dodged": result.get('dodged'),
+                         "shielded": result.get('shielded'),
+                         "resisted": result.get('resisted'),
+                         "total_damage": result.get('total_damage'),
+                         "dmg_type": result.get('dmg_type')}
                     )
 
-        #Loading it into gviz_api.DataTable
-        skill_data_table = gviz_api.DataTable(skill_table_description)
-        skill_data_table.LoadData(skill_data)
+    # Loading it into gviz_api.DataTable
+    dmg_data_table = gviz_api.DataTable(dmg_table_description)
+    dmg_data_table.LoadData(dmg_data)
+    # Creating the data
+    chart_dmg_description = {"player": ("string", "Player"),
+                             "damage": ("number", "Damage")}
+    chart_dmg_data = list()
+    bar_dmg_description = {"player": ("string", "Player"),
+                           "dps": ("number", "DPS")}
+    bar_dmg_data = list()
 
-        # Creating the data
-        dmg_table_description = {"player": ("string", "Player"),
-                                 "attacker": ("string", "Attacker"),
-                                 "skill": ("string", "Skill"),
-                                 "hit": ("number", "Hits"),
-                                 "missed": ("number", "Missed"),
-                                 "shielded": ("number", "Shielded"),
-                                 "dodged": ("number", "Dodged"),
-                                 "resisted": ("number", "Resisted"),
-                                 "total_damage": ("number", "Total Damage"),
-                                 "dmg_type": ("string", "Damage Type")}
-        dmg_data = list()
-        for player, attacker_dict in pull['damage_received'].items():
-            for attacker, skill_dict in attacker_dict['attackers'].items():
-                if attacker != 'amount':
-                    for skill, result in skill_dict.items():
-                        dmg_data.append(
-                            {"player": player,
-                             "attacker": attacker,
-                             "skill": skill,
-                             "hit": result.get('hit'),
-                             "missed": result.get('missed'),
-                             "dodged": result.get('dodged'),
-                             "shielded": result.get('shielded'),
-                             "resisted": result.get('resisted'),
-                             "total_damage": result.get('total_damage'),
-                             "dmg_type": result.get('dmg_type')}
-                        )
+    chart_heal_description = {"player": ("string", "Player"),
+                              "heal": ("number", "heal")}
+    chart_heal_data = list()
+    bar_heal_description = {"player": ("string", "Player"),
+                            "hps": ("number", "HPS")}
+    bar_heal_data = list()
 
-        #Loading it into gviz_api.DataTable
-        dmg_data_table = gviz_api.DataTable(dmg_table_description)
-        dmg_data_table.LoadData(dmg_data)
-        # Creating the data
-        chart_dmg_description = {"player": ("string", "Player"),
-                                 "damage": ("number", "Damage")}
-        chart_dmg_data = list()
-        bar_dmg_description = {"player": ("string", "Player"),
-                               "dps": ("number", "DPS")}
-        bar_dmg_data = list()
+    chart_dmg_received_description = {"player": ("string", "Player"),
+                                      "damage_received":
+                                      ("number", "Damage Received")}
+    chart_dmg_received_data = list()
+    bar_dtps_description = {"player": ("string", "Player"),
+                            "dtps": ("number", "DTPS")}
+    bar_dtps_data = list()
 
-        chart_heal_description = {"player": ("string", "Player"),
-                                  "heal": ("number", "heal")}
-        chart_heal_data = list()
-        bar_heal_description = {"player": ("string", "Player"),
-                                "hps": ("number", "HPS")}
-        bar_heal_data = list()
+    for player, damage_dict in pull['damage_done'].items():
+        chart_dmg_data.append(
+            {"player": player, "damage": damage_dict['amount']})
+        bar_dmg_data.append(
+            {"player": player, "dps": damage_dict['amount'] / (
+                pull['stop'] - pull['start']).total_seconds()})
 
-        chart_dmg_received_description = {"player": ("string", "Player"),
-                                          "damage_received":
-                                          ("number", "Damage Received")}
-        chart_dmg_received_data = list()
-        bar_dtps_description = {"player": ("string", "Player"),
-                                "dtps": ("number", "DTPS")}
-        bar_dtps_data = list()
+    for player, heal in pull['heal'].items():
+        chart_heal_data.append(
+            {"player": player, "heal": heal})
+        bar_heal_data.append(
+            {"player": player,
+             "hps": heal / (pull['stop'] - pull['start']).total_seconds()})
 
-        for player, damage_dict in pull['damage_done'].items():
-            chart_dmg_data.append(
-                {"player": player, "damage": damage_dict['amount']})
-            bar_dmg_data.append(
-                {"player": player, "dps": damage_dict['amount'] / (
-                    pull['stop'] - pull['start']).total_seconds()})
+    for player, damage in pull['damage_received'].items():
+        chart_dmg_received_data.append(
+            {"player": player, "damage_received": damage['amount']})
+        bar_dtps_data.append(
+            {"player": player,
+             "dtps": damage["amount"] / (pull['stop'] - pull['start']).total_seconds()})
 
-        for player, heal in pull['heal'].items():
-            chart_heal_data.append(
-                {"player": player, "heal": heal})
-            bar_heal_data.append(
-                {"player": player,
-                 "hps": heal / (pull['stop'] - pull['start']).total_seconds()})
+    chart_threat_description = {"player": ("string", "Player"),
+                                "threat": ("number", "threat")}
+    chart_threat_data = list()
+    if pull.get("threat"):
+        for player, threat in pull["threat"].items():
+            chart_threat_data.append(
+                {"player": player, "threat": threat})
 
-        for player, damage in pull['damage_received'].items():
-            chart_dmg_received_data.append(
-                {"player": player, "damage_received": damage['amount']})
-            bar_dtps_data.append(
-                {"player": player,
-                 "dtps": damage["amount"] / (pull['stop'] - pull['start']).total_seconds()})
+    # Loading it into gviz_api.DataTable
+    pie_dmg_data_table = gviz_api.DataTable(chart_dmg_description)
+    pie_dmg_data_table.LoadData(chart_dmg_data)
 
-        chart_threat_description = {"player": ("string", "Player"),
-                                    "threat": ("number", "threat")}
-        chart_threat_data = list()
-        if pull.get("threat"):
-            for player, threat in pull["threat"].items():
-                chart_threat_data.append(
-                    {"player": player, "threat": threat})
+    bar_dmg_data_table = gviz_api.DataTable(bar_dmg_description)
+    bar_dmg_data_table.LoadData(bar_dmg_data)
 
-        # Loading it into gviz_api.DataTable
-        pie_dmg_data_table = gviz_api.DataTable(chart_dmg_description)
-        pie_dmg_data_table.LoadData(chart_dmg_data)
+    pie_heal_data_table = gviz_api.DataTable(chart_heal_description)
+    pie_heal_data_table.LoadData(chart_heal_data)
 
-        bar_dmg_data_table = gviz_api.DataTable(bar_dmg_description)
-        bar_dmg_data_table.LoadData(bar_dmg_data)
+    bar_heal_data_table = gviz_api.DataTable(bar_heal_description)
+    bar_heal_data_table.LoadData(bar_heal_data)
 
-        pie_heal_data_table = gviz_api.DataTable(chart_heal_description)
-        pie_heal_data_table.LoadData(chart_heal_data)
+    pie_dmg_received_data_table = gviz_api.DataTable(
+        chart_dmg_received_description)
+    pie_dmg_received_data_table.LoadData(chart_dmg_received_data)
+    bar_dtps_data_table = gviz_api.DataTable(bar_dtps_description)
+    bar_dtps_data_table.LoadData(bar_dtps_data)
 
-        bar_heal_data_table = gviz_api.DataTable(bar_heal_description)
-        bar_heal_data_table.LoadData(bar_heal_data)
+    pie_threat_data_table = gviz_api.DataTable(chart_threat_description)
+    pie_threat_data_table.LoadData(chart_threat_data)
 
-        pie_dmg_received_data_table = gviz_api.DataTable(
-            chart_dmg_received_description)
-        pie_dmg_received_data_table.LoadData(chart_dmg_received_data)
-        bar_dtps_data_table = gviz_api.DataTable(bar_dtps_description)
-        bar_dtps_data_table.LoadData(bar_dtps_data)
+    # Creating a JSon string
+    json_pie_dmg_chart = pie_dmg_data_table.ToJSon(
+        columns_order=("player", "damage"))
+    json_bar_dmg_chart = bar_dmg_data_table.ToJSon(
+        columns_order=("player", "dps"))
+    json_pie_heal_chart = pie_heal_data_table.ToJSon(
+        columns_order=("player", "heal"))
+    json_bar_heal_chart = bar_heal_data_table.ToJSon(
+        columns_order=("player", "hps"))
+    json_pie_dmg_received_chart = pie_dmg_received_data_table.ToJSon(
+        columns_order=("player", "damage_received"))
+    json_bar_dtps = bar_dtps_data_table.ToJSon(
+        columns_order=("player", "dtps"))
+    json_skill_data_table = skill_data_table.ToJSon(
+        columns_order=(
+            "player", "skill", "hit", "dodged", "missed", "total_damage"),
+        order_by=("player", "skill"))
+    json_dmg_data_table = dmg_data_table.ToJSon(columns_order=(
+        "player", "attacker", "skill", "hit", "missed",
+        "dodged", "shielded", "resisted", 'total_damage', 'dmg_type'),
+        order_by=("player", "attacker", "skill"))
+    json_pie_threat_chart = pie_threat_data_table.ToJSon(
+        columns_order=("player", "threat"))
 
-        pie_threat_data_table = gviz_api.DataTable(chart_threat_description)
-        pie_threat_data_table.LoadData(chart_threat_data)
+    # Putting the JSon string into the template
+    response = chart_page_template.format(
+        pie_dmg=json_pie_dmg_chart,
+        bar_dmg=json_bar_dmg_chart,
+        pie_heal=json_pie_heal_chart,
+        bar_heal=json_bar_heal_chart,
+        pie_dmg_received=json_pie_dmg_received_chart,
+        skill_table=json_skill_data_table,
+        dmg_table=json_dmg_data_table,
+        bar_dtps=json_bar_dtps,
+        pie_threat=json_pie_threat_chart,
+        pull_target=pull["target"],
+        pull_start_time=pull["start"],
+        pull_duration=pull["stop"] - pull["start"],
+    )
+    return response
 
-        # Creating a JSon string
-        json_pie_dmg_chart = pie_dmg_data_table.ToJSon(
-            columns_order=("player", "damage"))
-        json_bar_dmg_chart = bar_dmg_data_table.ToJSon(
-            columns_order=("player", "dps"))
-        json_pie_heal_chart = pie_heal_data_table.ToJSon(
-            columns_order=("player", "heal"))
-        json_bar_heal_chart = bar_heal_data_table.ToJSon(
-            columns_order=("player", "hps"))
-        json_pie_dmg_received_chart = pie_dmg_received_data_table.ToJSon(
-            columns_order=("player", "damage_received"))
-        json_bar_dtps = bar_dtps_data_table.ToJSon(
-            columns_order=("player", "dtps"))
-        json_skill_data_table = skill_data_table.ToJSon(
-            columns_order=(
-                "player", "skill", "hit", "dodged", "missed", "total_damage"),
-            order_by=("player", "skill"))
-        json_dmg_data_table = dmg_data_table.ToJSon(columns_order=(
-            "player", "attacker", "skill", "hit", "missed",
-            "dodged", "shielded", "resisted", 'total_damage', 'dmg_type'),
-            order_by=("player", "attacker", "skill"))
-        json_pie_threat_chart = pie_threat_data_table.ToJSon(
-            columns_order=("player", "threat"))
-
-        # Putting the JSon string into the template
-        response = chart_page_template.format(
-            pie_dmg=json_pie_dmg_chart,
-            bar_dmg=json_bar_dmg_chart,
-            pie_heal=json_pie_heal_chart,
-            bar_heal=json_bar_heal_chart,
-            pie_dmg_received=json_pie_dmg_received_chart,
-            skill_table=json_skill_data_table,
-            dmg_table=json_dmg_data_table,
-            bar_dtps=json_bar_dtps,
-            pie_threat=json_pie_threat_chart,
-            pull_target=pull["target"],
-            pull_start_time=pull["start"],
-            pull_duration=pull["stop"] - pull["start"],
-        )
-        return response
 
 if __name__ == '__main__':
     # This is used when running locally only. When deploying to Google App
