@@ -19,7 +19,7 @@ from dateutil.tz import gettz
 from dateutil.utils import default_tzinfo
 
 from goldo_mappings import (
-    ABSORB, DODGE, MISS, SHIELD, PARRY, ENTER_COMBAT,
+    ABSORB, DODGE, MISS, SHIELD, PARRY, RESIST, ENTER_COMBAT,
     FORCE_ARMOR, PLAYER_TAG, DAMAGE_DONE, DAMAGE_RECEIVED, DEATH,
     LEAVE_COMBAT, HEAL, REVIVE, NO_DAMAGE)
 
@@ -55,6 +55,7 @@ ROW_DISPATCH_DICT = {
 DMG_RCVD_DISPATCH_DICT = {
     MISS: 'miss',
     ABSORB: 'absorb',
+    RESIST: 'resist',
     DODGE: 'dodge_or_parry',
     PARRY: 'dodge_or_parry',
     SHIELD: 'shield',
@@ -186,7 +187,8 @@ class Parser():
         player_damage_dict.setdefault(attacker, dict())
         player_damage_dict[attacker].setdefault(
             skill,
-            {'hit': 0, 'dodged': 0, 'shielded': 0, 'missed': 0, 'total_damage': 0})
+            {'hit': 0, 'dodged': 0, 'shielded': 0,
+                'missed': 0, 'resisted': 0, 'total_damage': 0})
         skill_dict = player_damage_dict[attacker][skill]
         try:
             raw_damage = int(raw_damage)
@@ -198,7 +200,7 @@ class Parser():
         for effect, handler in DMG_RCVD_DISPATCH_DICT.items():
             if effect in row['amount']:
                 getattr(self, handler)(row, skill_dict)
-                if handler in ['dodge_or_parry', 'miss']:
+                if handler in ['dodge_or_parry', 'miss', 'resist']:
                     return True
         skill_dict['hit'] += 1
         skill_dict['total_damage'] += raw_damage
@@ -226,6 +228,11 @@ class Parser():
     def dodge_or_parry(self, row, skill_dict):
         """Attack dodged or parried."""
         skill_dict['dodged'] += 1
+        return True
+
+    def resist(self, row, skill_dict):
+        """Attack resisted"""
+        skill_dict['resisted'] += 1
         return True
 
     def shield(self, row, skill_dict):
@@ -407,6 +414,7 @@ def get_chart(chart_id):
                                  "missed": ("number", "Missed"),
                                  "shielded": ("number", "Shielded"),
                                  "dodged": ("number", "Dodged"),
+                                 "resisted": ("number", "Resisted"),
                                  "total_damage": ("number", "Total Damage"),
                                  "dmg_type": ("string", "Damage Type")}
         dmg_data = list()
@@ -422,6 +430,7 @@ def get_chart(chart_id):
                              "missed": result.get('missed'),
                              "dodged": result.get('dodged'),
                              "shielded": result.get('shielded'),
+                             "resisted": result.get('resisted'),
                              "total_damage": result.get('total_damage'),
                              "dmg_type": result.get('dmg_type')}
                         )
@@ -522,7 +531,7 @@ def get_chart(chart_id):
             order_by=("player", "skill"))
         json_dmg_data_table = dmg_data_table.ToJSon(columns_order=(
             "player", "attacker", "skill", "hit", "missed",
-            "dodged", "shielded", 'total_damage', 'dmg_type'),
+            "dodged", "shielded", "resisted", 'total_damage', 'dmg_type'),
             order_by=("player", "attacker", "skill"))
         json_pie_threat_chart = pie_threat_data_table.ToJSon(
             columns_order=("player", "threat"))
