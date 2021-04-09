@@ -19,6 +19,8 @@ DAMAGE_FORCE_ABSORBED_ROWS = ["""[21:29:59.374] [The Terror From Beyond {3025233
 """[21:29:59.374] [The Terror From Beyond {3025233229381632}:13241000114922] [@Lor'dan] [Monsterous Swipe {3025456567681338}] [ApplyEffect {836045448945477}: Damage {836045448945501}] (0 -dodge {836045448945505}) <1>\n"""]
 DAMAGE_RECVD_MISSED = """[21:30:02.541] [The Terror From Beyond {3025233229381632}:13241000114922] [@Lor'dan] [Monsterous Swipe {3025456567681338}] [ApplyEffect {836045448945477}: Damage {836045448945501}] (0 -miss {836045448945502}) <1>"""
 DAMAGE_RECVD_DODGED = """[21:36:18.104] [Tunneling Tentacle {3025271884087296}:13241000211746] [@Lor'dan] [Slap {3025808754999296}] [ApplyEffect {836045448945477}: Damage {836045448945501}] (0 -dodge {836045448945505}) <1>"""
+DAMAGE_RECVD_DEFLECTED = """[23:49:54.399] [Vilus Garr {3054408942223360}:685001717997] [@Lor'dan] [Pistol Shot {3128737646247936}] [ApplyEffect {836045448945477}: Damage {836045448945501}] (0 -deflect {836045448945508}) <1>"""
+DAMAGE_RECVD_PARRIED = """[23:47:39.133] [Kell Dragon {3067057620910080}:4632001698367] [@Lor'dan] [Spines {3148979827113984}] [ApplyEffect {836045448945477}: Damage {836045448945501}] (0 -parry {836045448945503}) <1>"""
 HEAL_RECVD = """[21:40:55.032] [@Lor'dan] [@Lor'dan] [Into the Fray {3172499068026880}] [ApplyEffect {836045448945477}: Heal {836045448945500}] (4480) <5600>"""
 NEGATIVE_THREAT_ROW = """[21:59:39.846] [@Lor'dan] [Pearl {3374109127868416}:9182000098644] [Swoop {3379568031301632}] [Event {836045448945472}: ModifyThreat {836045448945483}] () <-1492337>"""
 RESIST_ROW = """[21:32:04.449] [Dread Guard Dispatcher {3288141062471680}:22739000189658] [@Lor'dan] [Force Lightning {3288162537308160}] [ApplyEffect {836045448945477}: Damage {836045448945501}] (0 -resist {836045448945507}) <1>"""
@@ -129,6 +131,32 @@ class TestParserFunctions(unittest.TestCase):
         self.assertEqual(self.parser.pull["damage_received"]["Lor'dan"]["attackers"]["Tunneling Tentacle "]["Slap "]["total_damage"], 0)
         self.assertEqual(self.parser.pull["damage_received"]["Lor'dan"]["attackers"]["Tunneling Tentacle "]["Slap "]["dodged"], 1)
         self.assertEqual(self.parser.pull["damage_received"]["Lor'dan"]["attackers"]["Tunneling Tentacle "]["Slap "]["hit"], 0)
+
+    def test_damage_received_deflected(self):
+        file_ = io.StringIO()
+        file_.writelines(DAMAGE_RECVD_DEFLECTED)
+        file_.seek(0)
+        log_file = csv.DictReader(
+            file_, fieldnames=main.CSV_HEADER, delimiter=']',
+            skipinitialspace=True)
+        for row in log_file:
+            self.parser.dispatch_row(row)
+        self.assertEqual(self.parser.pull["damage_received"]["Lor'dan"]["attackers"]["Vilus Garr "]["Pistol Shot "]["total_damage"], 0)
+        self.assertEqual(self.parser.pull["damage_received"]["Lor'dan"]["attackers"]["Vilus Garr "]["Pistol Shot "]["dodged"], 1)
+        self.assertEqual(self.parser.pull["damage_received"]["Lor'dan"]["attackers"]["Vilus Garr "]["Pistol Shot "]["hit"], 0)
+
+    def test_damage_received_parried(self):
+        file_ = io.StringIO()
+        file_.writelines(DAMAGE_RECVD_PARRIED)
+        file_.seek(0)
+        log_file = csv.DictReader(
+            file_, fieldnames=main.CSV_HEADER, delimiter=']',
+            skipinitialspace=True)
+        for row in log_file:
+            self.parser.dispatch_row(row)
+        self.assertEqual(self.parser.pull["damage_received"]["Lor'dan"]["attackers"]["Kell Dragon "]["Spines "]["total_damage"], 0)
+        self.assertEqual(self.parser.pull["damage_received"]["Lor'dan"]["attackers"]["Kell Dragon "]["Spines "]["dodged"], 1)
+        self.assertEqual(self.parser.pull["damage_received"]["Lor'dan"]["attackers"]["Kell Dragon "]["Spines "]["hit"], 0)
 
     def test_heal_received(self):
         file_ = io.StringIO()
