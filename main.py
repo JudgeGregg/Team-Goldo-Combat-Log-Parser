@@ -19,7 +19,7 @@ from dateutil.tz import gettz
 from dateutil.utils import default_tzinfo
 
 from goldo_mappings import (
-    ABSORB, DODGE, MISS, SHIELD, PARRY, RESIST, ENTER_COMBAT,
+    ABSORB, DODGE, MISS, SHIELD, DEFLECT, PARRY, RESIST, ENTER_COMBAT,
     FORCE_ARMOR, PLAYER_TAG, DAMAGE_DONE, DAMAGE_RECEIVED, DEATH,
     LEAVE_COMBAT, HEAL, REVIVE, NO_DAMAGE)
 
@@ -58,6 +58,7 @@ DMG_RCVD_DISPATCH_DICT = {
     RESIST: 'resist',
     DODGE: 'dodge_or_parry',
     PARRY: 'dodge_or_parry',
+    DEFLECT: 'dodge_or_parry',
     SHIELD: 'shield',
 }
 
